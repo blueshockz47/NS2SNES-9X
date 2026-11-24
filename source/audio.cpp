@@ -15,20 +15,27 @@ static bool ready = false;
 static u64 pushedFrames = 0, playedBase = 0;
 static bool counterOk = false;
 static int counterDiv = 1;
+static u64 rateStartPlayed = 0;
+static double rateStartMs = -1;
+static void freePool() {
+  for (int i=0;i<POOL;++i) { free(memory[i]); memory[i]=nullptr; busy[i]=false; }
+}
 static int16_t silence[CAPACITY_FRAMES * 2];
 
 bool init(std::string& error) {
+  if (ready) return true;
+  pushedFrames=playedBase=rateStartPlayed=0; counterOk=false; counterDiv=1; rateStartMs=-1;
   Result rc = audoutInitialize();
   if (R_FAILED(rc)) { error = "audout unavailable (" + std::to_string(rc) + ")"; return false; }
   for (int i = 0; i < POOL; i++) {
     memory[i] = memalign(0x1000, BYTES);
-    if (!memory[i]) { error = "audio memory"; return false; }
+    if (!memory[i]) { error = "audio memory"; audoutExit(); freePool(); return false; }
     memset(memory[i], 0, BYTES);
     busy[i] = false;
   }
   rc = audoutStartAudioOut();
   { u64 played = 0; if (R_SUCCEEDED(audoutGetAudioOutPlayedSampleCount(&played))) playedBase = played; }
-  if (R_FAILED(rc)) { error = "audout start failed (" + std::to_string(rc) + ")"; audoutExit(); return false; }
+  if (R_FAILED(rc)) { error = "audout start failed (" + std::to_string(rc) + ")"; audoutExit(); freePool(); return false; }
   ready = true;
   return true;
 }
@@ -42,7 +49,7 @@ static void reclaim() {
 }
 
 void push(const int16_t* stereo, int frames) {
-  if (!ready || frames <= 0) return;
+  if (!ready || !stereo || frames <= 0) return;
   reclaim();
   if (frames > CAPACITY_FRAMES) frames = CAPACITY_FRAMES;
   for (int i = 0; i < POOL; i++) {
@@ -70,8 +77,6 @@ int pending() {
 // The played counter's unit is found from its rate over the first half second
 // (48000/s = stereo frames, 96000/s = single samples); until then, and if it
 // never moves, the queue is estimated from buffer counts.
-static u64 rateStartPlayed = 0;
-static double rateStartMs = -1;
 static double msNow() { return armTicksToNs(armGetSystemTick()) / 1e6; }
 double queuedFrames() {
   if (!ready) return 0;
@@ -81,7 +86,7 @@ double queuedFrames() {
       double t = msNow();
       if (rateStartMs < 0 && played > 0) { rateStartMs = t; rateStartPlayed = played; }
       else if (rateStartMs >= 0 && t - rateStartMs >= 500) {
-        double rate = (played - rateStartPlayed) * 1000.0 / (t - rateStartMs);
+        double rate = (played >= rateStartPlayed ? played - rateStartPlayed : 0) * 1000.0 / (t - rateStartMs);
         if (rate > 20000) { counterOk = true; counterDiv = rate > 72000 ? 2 : 1; playedBase = played; pushedFrames = (u64)(pending() * 800.0); }
         else rateStartMs = -1;
       }
@@ -103,7 +108,7 @@ void shutdown() {
   audoutStopAudioOut();
   bool flushed; audoutFlushAudioOutBuffers(&flushed);
   audoutExit();
-  for (int i = 0; i < POOL; i++) free(memory[i]);
+  freePool();
   ready = false;
 }
 
