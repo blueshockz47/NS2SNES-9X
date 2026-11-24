@@ -1,4 +1,6 @@
-# SW2SNES
+# NS2SNES-9X
+
+Development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES), with original credits and licenses retained. Phase 1 is an alpha baseline, not a performance upgrade. Original saves remain untouched; back up before manually copying compatible saves.
 
 A Super Nintendo emulator for the Nintendo Switch 2, running as a homebrew app
 from **hbmenu** under [kaiHEN](https://github.com/ouncebrew/kaihen). It uses the
@@ -11,20 +13,20 @@ No game ROMs are included or provided.
 ## Installing
 
 1. Set up kaiHEN on your Switch 2 so that hbmenu runs.
-2. Copy `sw2snes.nro` from the latest release to `/switch/sw2snes/sw2snes.nro`
+2. Copy `ns2snes-9x.nro` from the latest release to `/switch/ns2snes-9x/ns2snes-9x.nro`
    on the SD card.
 3. Copy your games (`.sfc`, `.smc`, `.fig`, `.swc` or `.zip`) to `/roms/snes` on
-   the SD card. SW2SNES creates this folder on its first launch. A different
+   the SD card. NS2SNES-9X creates this folder on its first launch. A different
    folder can be chosen in Settings > ROM folder.
-4. Launch **SW2SNES** from hbmenu.
+4. Launch **NS2SNES-9X** from hbmenu.
 
-Settings, saves and play time are kept in `/switch/sw2snes/` on the SD card.
+Settings, saves and play time are kept in `/switch/ns2snes-9x/` on the SD card.
 
 ### Updating
 
-Replace `/switch/sw2snes/sw2snes.nro` with the one from the newest release. Settings,
-saves, save states and play time are kept in `/switch/sw2snes/` and are not touched
-by an update. (Close SW2SNES on the console before uploading over FTP; a running
+Replace `/switch/ns2snes-9x/ns2snes-9x.nro` with the one from the newest release. Settings,
+saves, save states and play time are kept in `/switch/ns2snes-9x/` and are not touched
+by an update. (Close NS2SNES-9X on the console before uploading over FTP; a running
 app's file cannot be replaced.)
 
 ## Features
@@ -74,7 +76,7 @@ export DEVKITPRO=/opt/devkitpro
 make
 ```
 
-This builds `sw2snes.nro`. `tests/host_build.sh` builds a host (Mac/Linux) test of
+This builds `ns2snes-9x.nro`. `tests/host_build.sh` builds a host (Mac/Linux) test of
 the core bridge under AddressSanitizer.
 
 ## Layout
