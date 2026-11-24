@@ -1,5 +1,6 @@
 // SW2SNES: Snes9x adapter (core table), run-ahead and rewind history.
 #include "core.h"
+#include "rewind_delta.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -91,23 +92,15 @@ static void encode(const uint8_t* a, const uint8_t* b, size_t n, std::vector<uin
     i = l;
   }
 }
-static void applyDelta(std::vector<uint8_t>& s, const std::vector<uint8_t>& d) {
-  size_t i = 0, p = 0;
-  while (p + 8 <= d.size()) {
-    uint32_t z, l; memcpy(&z, &d[p], 4); memcpy(&l, &d[p + 4], 4); p += 8;
-    i += z;
-    for (uint32_t k = 0; k < l && i < s.size(); k++) s[i++] ^= d[p + k];
-    p += l;
-  }
-}
-bool rewind_init(long budgetBytes) { budget = budgetBytes; rewind_clear(); return true; }
+bool rewind_init(long budgetBytes) { budget = budgetBytes > 0 ? budgetBytes : 0; rewind_clear(); return true; }
 void rewind_clear() { deltas.clear(); used = 0; cur.clear(); }
 bool rewind_push() {
   long sz = snes_state_size();
   if (sz <= 0) return false;
   if ((long)scratch.size() != sz) scratch.assign(sz, 0);
   if (!snes_freeze(scratch.data(), sz)) return false;
-  if ((long)cur.size() == sz) {
+  if ((long)cur.size() != sz) rewind_clear();
+  if ((long)cur.size() == sz && budget > 0) {
     deltas.emplace_back();
     encode(scratch.data(), cur.data(), sz, deltas.back());
     used += (long)deltas.back().size();
@@ -118,10 +111,16 @@ bool rewind_push() {
 }
 bool rewind_pop() {
   if (deltas.empty() || cur.empty()) return false;
-  applyDelta(cur, deltas.back());
+  scratch = cur;
+  if (!rewind_detail::applyDelta(scratch, deltas.back()) || !snes_unfreeze(scratch.data(), (long)scratch.size())) {
+    snes_unfreeze(cur.data(), (long)cur.size());
+    rewind_clear();
+    return false;
+  }
+  cur.swap(scratch);
   used -= (long)deltas.back().size();
   deltas.pop_back();
-  return snes_unfreeze(cur.data(), (long)cur.size()) != 0;
+  return true;
 }
 bool rewind_reload() { return !cur.empty() && snes_unfreeze(cur.data(), (long)cur.size()) != 0; }
 int rewind_count() { return (int)deltas.size(); }
