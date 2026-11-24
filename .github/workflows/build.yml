@@ -1,8 +1,12 @@
-name: Phase 1 build
+name: NS2SNES-9X build
 on:
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ns2snes-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -11,17 +15,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sh tests/host_build.sh
+      - run: clang++ -std=c++14 -fsanitize=address,undefined -g tests/rewind_delta_test.cpp -o /tmp/rewind-test && /tmp/rewind-test
   nro:
     runs-on: ubuntu-latest
-    container: devkitpro/devkita64:latest
+    container: devkitpro/devkita64@sha256:1fc388c3a0d34bd2045a6dadcb1020e069d5f876a187fd705de14b4440c00282
     steps:
       - uses: actions/checkout@v4
+      - name: Restore verified SDK cache
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: /opt/devkitpro
+          key: ns2-sdk-linux-x64-1fc388c3-5e957599-v1
       - name: Install SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
         run: |
-          dkp-pacman -Sy --needed --noconfirm switch-dev switch-freetype switch-zlib
+          for attempt in 1 2 3; do
+            if dkp-pacman -Sy --needed --noconfirm switch-dev switch-freetype switch-zlib; then break; fi
+            [ "$attempt" -lt 3 ] || exit 1
+            sleep 15
+          done
           curl -fsSL https://raw.githubusercontent.com/ouncebrew/ounce-devkit/5e957599bd498643d82e5470aec80da67a12685d/install.sh -o /tmp/ounce-install.sh
           sh /tmp/ounce-install.sh
           dkp-pacman -Q
+      - name: Verify SDK
+        run: |
+          test -f /opt/devkitpro/libounce/switch2_rules
+          test -x /opt/devkitpro/devkitA64/bin/aarch64-none-elf-g++
+          dkp-pacman -Q libounce ouncevk libkaihen switch-freetype switch-zlib
       - name: Build
         run: make -j2 DEVKITPRO=/opt/devkitpro
       - name: Validate NRO

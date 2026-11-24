@@ -161,6 +161,7 @@ static void record(const char* fmt, ...) {
 /* ---------------- Files ---------------- */
 static bool readFile(const string& path, vector<uint8_t>& out, long limit = 4 * 1024 * 1024) {
   FILE* f = fopen(path.c_str(), "rb");
+  if (!f) f = fopen((path + ".bak").c_str(), "rb");
   if (!f) return false;
   fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
   if (n < 0 || n > limit) { fclose(f); return false; }
@@ -183,8 +184,16 @@ static bool writeFile(const string& path, const void* data, size_t n) {
   bool ok = fwrite(data, 1, n, f) == n;
   ok = fclose(f) == 0 && ok;
   if (!ok) { remove(tmp.c_str()); return false; }
-  remove(path.c_str());
-  return rename(tmp.c_str(), path.c_str()) == 0;
+  // Never delete the previous save before the replacement is committed.
+  if (rename(tmp.c_str(), path.c_str()) == 0) return true;
+  // Some filesystems reject replacement rename. Preserve a recoverable backup.
+  const string bak = path + ".bak";
+  struct stat st;
+  if (stat(path.c_str(), &st) != 0 || stat(bak.c_str(), &st) == 0 || rename(path.c_str(), bak.c_str()) != 0) { remove(tmp.c_str()); return false; }
+  if (rename(tmp.c_str(), path.c_str()) == 0) { remove(bak.c_str()); return true; }
+  rename(bak.c_str(), path.c_str());
+  remove(tmp.c_str());
+  return false;
 }
 static bool writeText(const string& path, const string& text) { return writeFile(path, text.data(), text.size()); }
 static bool exists(const string& path) { struct stat st; return stat(path.c_str(), &st) == 0; }
@@ -584,7 +593,7 @@ static string slotLabel(int n) {
 }
 static void saveState() {
   long len = C->state_save();
-  if (!len) { showToast("State save failed: Emulator could not create a save state."); return; }
+  if (len <= 0 || !C->state_buffer(len)) { showToast("State save failed: Emulator could not create a save state."); return; }
   if (!writeFile(statePath(stateSlot), C->state_buffer(len), len)) { showToast("State save failed"); return; }
   running->slots.set(std::to_string(stateSlot), Json::number((double)time(nullptr) * 1000));
   writeText(slotsPath(), running->slots.dump());
@@ -593,6 +602,7 @@ static void saveState() {
 static void loadState(bool quietIfNone, int n) {
   vector<uint8_t> d;
   if (!readFile(statePath(n), d, 1024 * 1024)) { if (!quietIfNone) showToast("Slot " + std::to_string(n) + " is empty"); return; }
+  if (d.empty()) { showToast("State load failed"); return; }
   char* buf = C->state_buffer((long)d.size());
   if (!buf) { showToast("State load failed"); return; }
   memcpy(buf, d.data(), d.size());
