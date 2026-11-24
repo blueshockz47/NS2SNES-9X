@@ -26,7 +26,7 @@ static const CoreApi* C = &SNES9X_CORE;
 #include <minizip/unzip.h>
 
 #ifndef APP_VERSION
-#define APP_VERSION "2.0.0"
+#define APP_VERSION "0.1.0-alpha"
 #endif
 
 using std::string;
@@ -38,7 +38,7 @@ using gfx::Color;
 // RetroArch users and frontends use); any folder can be chosen in Settings.
 static const char* DEFAULT_ROM_DIR = "sdmc:/roms/snes";
 static std::string romDir = DEFAULT_ROM_DIR;
-static const char* DATA_DIR = "sdmc:/switch/sw2snes";
+static const char* DATA_DIR = "sdmc:/switch/ns2snes-9x";
 static const double NES_RATE = 60.0988;
 // Npad button bits (the same values the JS app uses).
 enum { B_A = 1, B_B = 2, B_X = 4, B_Y = 8, B_L = 64, B_R = 128, B_PLUS = 1024, B_MINUS = 2048,
@@ -1071,7 +1071,7 @@ static void drawBrowser() {
   float x = (gfx::UI_W - winW) / 2, y = roundf((gfx::UI_H - winH) / 2);
   gfx::rect(x, y, winW, winH, col(C_PANEL), 14, 1, col(C_LINE));
   float cx = x + padX, cy = y + padY;
-  panelHeader(cx, cy, "SW2SNES", roms.empty() ? "" : std::to_string(roms.size()) + (roms.size() == 1 ? " game" : " games"));
+  panelHeader(cx, cy, "NS2SNES-9X", roms.empty() ? "" : std::to_string(roms.size()) + (roms.size() == 1 ? " game" : " games"));
   cy += 34 + 12;
   // Tabs
   float tx = cx;
@@ -1545,7 +1545,7 @@ int main(int argc, char** argv) {
   bool firstLaunch = !exists(SETTINGS());
   if (firstLaunch) { mkdir("sdmc:/roms", 0777); mkdir(DEFAULT_ROM_DIR, 0777); saveSettings(); }
   logFile = fopen((string(DATA_DIR) + "/log.txt").c_str(), "w");
-  record("SW2SNES %s", APP_VERSION);
+  record("NS2SNES-9X %s", APP_VERSION);
 
   string error;
   if (!gfx::init(error)) { record("gfx: %s", error.c_str()); if (logFile) fclose(logFile); romfsExit(); return 1; }

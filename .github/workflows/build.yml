@@ -1,0 +1,36 @@
+name: Phase 1 build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh tests/host_build.sh
+  nro:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDK
+        run: |
+          dkp-pacman -Sy --needed --noconfirm switch-dev switch-freetype switch-zlib
+          curl -fsSL https://raw.githubusercontent.com/ouncebrew/ounce-devkit/5e957599bd498643d82e5470aec80da67a12685d/install.sh -o /tmp/ounce-install.sh
+          sh /tmp/ounce-install.sh
+          dkp-pacman -Q
+      - name: Build
+        run: make -j2 DEVKITPRO=/opt/devkitpro
+      - name: Validate NRO
+        run: |
+          test -s ns2snes-9x.nro
+          python3 -c "from pathlib import Path; p=Path('ns2snes-9x.nro').read_bytes(); assert p[16:20]==b'NRO0'"
+          sha256sum ns2snes-9x.nro
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NS2SNES-9X-v0.1.0-alpha
+          path: ns2snes-9x.nro
+          if-no-files-found: error

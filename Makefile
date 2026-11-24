@@ -9,11 +9,11 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libounce/switch2_rules
 
-APP_TITLE	:=	SW2SNES
-APP_AUTHOR	:=	Rodpad
-APP_VERSION	:=	1.0.1
+APP_TITLE := NS2SNES-9X
+APP_AUTHOR := blueshockz47 (based on Rodpad)
+APP_VERSION := 0.1.0-alpha
 
-TARGET		:=	sw2snes
+TARGET := ns2snes-9x
 BUILD		:=	build
 S9X		:=	third_party/snes9x
 LC		:=	$(S9X)/libretro/libretro-common
