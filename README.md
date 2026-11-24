@@ -1,4 +1,29 @@
-# SW2SNES
+# NS2SNES-9X
+
+**Native SNES emulation for Nintendo Switch 2 — development preview.**
+
+NS2SNES-9X is a community development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES). Our focus is stability, performance diagnostics, responsive controls and a refined user experience while preserving upstream credits.
+
+## Project status
+
+Phase 2 alpha has compiled successfully and passed host rewind sanitizer tests. Hardware validation is pending; pull request CI is still affected by an SDK download/cache issue. There is no stable NS2SNES-9X release yet.
+
+[Download Phase 2 alpha (GitHub Actions ZIP)](https://github.com/blueshockz47/NS2SNES-9X/actions/runs/45475895332/artifacts/14959546610) · [Build history](https://github.com/blueshockz47/NS2SNES-9X/actions)
+
+The public repository is intended for project information and future stable releases. A separate development repository is planned; its link will be added once created.
+
+### Development roadmap
+
+| Phase | Focus | Status |
+| --- | --- | --- |
+| 1 | Foundation and rebranding | Alpha built |
+| 2 | Stability, rewind, audio and save safety | Alpha built; hardware/CI verification pending |
+| 3 | Benchmark and diagnostics | Planned |
+| 4–7 | Core performance, adaptive profiles, audio and input | Planned |
+| 8–11 | Library, interface, graphics and save manager | Planned |
+| 12–15 | Compatibility, content management, hardware testing and stable release | Planned |
+
+## About
 
 A Super Nintendo emulator for the Nintendo Switch 2, running as a homebrew app
 from **hbmenu** under [kaiHEN](https://github.com/ouncebrew/kaihen). It uses the
@@ -11,23 +36,23 @@ No game ROMs are included or provided.
 ## Installing
 
 1. Set up kaiHEN on your Switch 2 so that hbmenu runs.
-2. Copy `sw2snes.nro` from the latest release to `/switch/sw2snes/sw2snes.nro`
+2. Copy `ns2snes-9x.nro` from the alpha download above to `/switch/ns2snes-9x/ns2snes-9x.nro`
    on the SD card.
 3. Copy your games (`.sfc`, `.smc`, `.fig`, `.swc` or `.zip`) to `/roms/snes` on
-   the SD card. SW2SNES creates this folder on its first launch. A different
+   the SD card. NS2SNES-9X creates this folder on its first launch. A different
    folder can be chosen in Settings > ROM folder.
-4. Launch **SW2SNES** from hbmenu.
+4. Launch **NS2SNES-9X** from hbmenu.
 
-Settings, saves and play time are kept in `/switch/sw2snes/` on the SD card.
+Settings, saves and play time are kept in `/switch/ns2snes-9x/` on the SD card.
 
 ### Updating
 
-Replace `/switch/sw2snes/sw2snes.nro` with the one from the newest release. Settings,
-saves, save states and play time are kept in `/switch/sw2snes/` and are not touched
-by an update. (Close SW2SNES on the console before uploading over FTP; a running
+Replace `/switch/ns2snes-9x/ns2snes-9x.nro` with the one from a newer compatible build. Settings,
+saves, save states and play time are kept in `/switch/ns2snes-9x/` and are not touched
+by an update. (Close NS2SNES-9X on the console before uploading over FTP; a running
 app's file cannot be replaced.)
 
-## Features
+## Inherited emulator features
 
 - Snes9x (libretro), including its enhancement-chip support (SuperFX, SA-1, DSP-n, CX4, S-DD1, SPC7110 and others)
 - Hi-res and interlaced modes (512 wide, 448/478 high)
@@ -65,6 +90,8 @@ ZL/ZR switch between All, Favourites and Recent.
 
 ## Building
 
+The instructions below describe the rebranded development branches; the public main branch still contains the upstream baseline.
+
 Requirements: [devkitPro pacman](https://devkitpro.org/wiki/devkitPro_pacman) with
 `switch-dev`, `switch-freetype` and `switch-zlib`, and the Switch 2 devkit
 (`sh install.sh` from ounce-devkit).
@@ -74,7 +101,7 @@ export DEVKITPRO=/opt/devkitpro
 make
 ```
 
-This builds `sw2snes.nro`. `tests/host_build.sh` builds a host (Mac/Linux) test of
+This builds `ns2snes-9x.nro`. `tests/host_build.sh` builds a host (Mac/Linux) test of
 the core bridge under AddressSanitizer.
 
 ## Layout
@@ -90,9 +117,9 @@ the core bridge under AddressSanitizer.
 
 ## Licence
 
-SW2SNES's own code (everything outside `third_party/`) is under the MIT licence
+The original SW2SNES code and NS2SNES-9X modifications (everything outside `third_party/`) is under the MIT licence
 (see `LICENSE`). **Snes9x is not free software for commercial use**: its licence
-allows free non-commercial use and distribution only, so SW2SNES as a whole may
+allows free non-commercial use and distribution only, so NS2SNES-9X as a whole may
 only be used and distributed non-commercially. See `licenses/snes9x-LICENSE.txt`.
 
 It also includes:
