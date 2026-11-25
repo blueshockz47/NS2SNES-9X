@@ -1,58 +1,57 @@
 # NS2SNES-9X
 
-**Native SNES emulation for Nintendo Switch 2 — development preview.**
+**Native SNES emulation for Nintendo Switch 2**
 
-NS2SNES-9X is a community development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES). Our focus is stability, performance diagnostics, responsive controls and a refined user experience while preserving upstream credits.
+A community development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES), powered by Snes9x and designed for hbmenu under [kaiHEN](https://github.com/ouncebrew/kaihen).
 
-## Project status
+![Development](https://img.shields.io/badge/development-v1.0.0--RC1-blue) ![CI](https://img.shields.io/badge/RC1%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware%20validation-in%20progress-orange)
 
-Phase 2 alpha has compiled successfully and passed host rewind sanitizer tests. Hardware validation is pending; pull request CI is still affected by an SDK download/cache issue. There is no stable NS2SNES-9X release yet.
+## Release status
 
-[Download Phase 2 alpha (GitHub Actions ZIP)](https://github.com/blueshockz47/NS2SNES-9X/actions/runs/45475895332/artifacts/14959546610) · [Build history](https://github.com/blueshockz47/NS2SNES-9X/actions)
+**v1.0.0-RC1 — hardware validation in progress.**
 
-The public repository is intended for project information and future stable releases. A separate development repository is planned; its link will be added once created.
+The release candidate has passed host regression tests and ARM64 NRO compilation. 21 of 22 planned development phases have been implemented, with final hardware acceptance and public release remaining. The historical ounce-devkit 20261115 SDK is pinned following exit-crash testing.
 
-### Development roadmap
+[Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-| Phase | Focus | Status |
-| --- | --- | --- |
-| 1 | Foundation and rebranding | Alpha built |
-| 2 | Stability, rewind, audio and save safety | Alpha built; hardware/CI verification pending |
-| 3 | Benchmark and diagnostics | Planned |
-| 4–7 | Core performance, adaptive profiles, audio and input | Planned |
-| 8–11 | Library, interface, graphics and save manager | Planned |
-| 12–15 | Compatibility, content management, hardware testing and stable release | Planned |
+The current release candidate is private. The public main branch retains the upstream baseline and project documentation until the stable release; the features below describe the RC1 development build, not the current public source. No stable download is available yet.
 
-## About
+## What's new in NS2SNES-9X
 
-A Super Nintendo emulator for the Nintendo Switch 2, running as a homebrew app
-from **hbmenu** under [kaiHEN](https://github.com/ouncebrew/kaihen). It uses the
-**Snes9x** core with the [SW2NES](https://github.com/Rodpad/SW2NES) front end:
-native C++ with OpenGL ES, built with devkitPro and the Switch 2 devkit
-([ounce-devkit](https://github.com/ouncebrew/ounce-devkit)).
+### Interface and game library
+- Edge-to-edge fullscreen grid and list layouts, with a 4 × 3 cover grid.
+- Local PNG cover art, bounded cover cache and incremental loading.
+- Search, favourites, recently played, playtime and sorting by name, playtime or recent activity.
+- Multiple ROM folders, remembered selection and optimized library scanning.
+- Dark, OLED Black, Light and SNES Classic themes with six accent choices.
+- D-pad and analog-stick navigation in all four grid directions.
 
-No game ROMs are included or provided.
+### Graphics and performance
+- Switch 2 (16:9) fullscreen aspect option: fills the display by stretching, without cropping.
+- ARM64 NEON RGB565 conversion and optimized rewind delta processing.
+- Adaptive performance profiles, frame pacing and frame-delay refinements.
+- PAL/NTSC regional timing, graphics upload validation and shader fallback.
+- Retained OpenGL ES shaders, run-ahead, 120 Hz/VRR support and fast-forward.
 
-## Installing
+### Audio and controls
+- Adaptive audio queue recovery, buffer accounting and allocation cleanup.
+- Independent turbo per player/button, neutral reconnect gating and opposing-direction filtering.
+- Controller presets, per-player remapping and adjustable analog deadzone.
 
-1. Set up kaiHEN on your Switch 2 so that hbmenu runs.
-2. Copy `ns2snes-9x.nro` from the alpha download above to `/switch/ns2snes-9x/ns2snes-9x.nro`
-   on the SD card.
-3. Copy your games (`.sfc`, `.smc`, `.fig`, `.swc` or `.zip`) to `/roms/snes` on
-   the SD card. NS2SNES-9X creates this folder on its first launch. A different
-   folder can be chosen in Settings > ROM folder.
-4. Launch **NS2SNES-9X** from hbmenu.
+### Saves and compatibility
+- Ten save-state slots with date/time, embedded integrity checks and previous-state backups.
+- SRAM backups, safer temporary-file replacement and resume last game.
+- Missing-only import of original SW2SNES SRAM and first four states for unpatched games.
+- IPS, BPS and UPS sidecar patches, ZIP CRC validation and patch-specific save names.
+- MSU-1 companion path support and enhancement-chip diagnostics.
 
-Settings, saves and play time are kept in `/switch/ns2snes-9x/` on the SD card.
+### Stability and diagnostics
+- Validated rewind delta decoding and reset after state loading.
+- Per-session benchmark CSV logs with FPS, region-relative speed, timing, audio queue and rewind statistics.
+- Historical SDK pinning, sanitizer-enabled host regression tests, synthetic NTSC/PAL/MSU-1 smoke tests and ARM64 build validation.
+- Improved shutdown diagnostics, file-reading checks and SRAM bounds validation.
 
-### Updating
-
-Replace `/switch/ns2snes-9x/ns2snes-9x.nro` with the one from a newer compatible build. Settings,
-saves, save states and play time are kept in `/switch/ns2snes-9x/` and are not touched
-by an update. (Close NS2SNES-9X on the console before uploading over FTP; a running
-app's file cannot be replaced.)
-
-## Inherited emulator features
+## Core features inherited from SW2SNES
 
 - Snes9x (libretro), including its enhancement-chip support (SuperFX, SA-1, DSP-n, CX4, S-DD1, SPC7110 and others)
 - Hi-res and interlaced modes (512 wide, 448/478 high)
@@ -64,12 +63,21 @@ app's file cannot be replaced.)
 - NTSC signal simulation (composite, composite with dot crawl, S-Video)
 - Curvature, rounded corners, vignette and brightness boost
 - Aspect ratio, integer or fit scaling, overscan
-- 4 save-state slots per game, battery saves, optional auto-load of the latest state
+- Save states per game, battery saves, optional auto-load of the latest state
 - Two players, with separate button mapping and turbo for each
 - Game Genie and Pro Action Replay codes (on-screen editor)
 - Favourites, recently played and time played per game
 - Zipped ROMs (`.zip` with a `.sfc`/`.smc` inside)
 - Per-game or global settings; advanced options can be hidden
+
+## Installation (for the upcoming stable release)
+
+1. Set up kaiHEN and hbmenu on your Switch 2.
+2. Copy the released `ns2snes-9x.nro` to `/switch/ns2snes-9x/ns2snes-9x.nro`.
+3. Place your own SNES ROMs in `/roms/snes/` or select another ROM folder.
+4. Launch NS2SNES-9X from hbmenu.
+
+No ROMs are included. Back up saves before updating. Close the emulator before replacing its NRO. Settings, saves and logs are stored in `/switch/ns2snes-9x/`. Older builds cannot read the new wrapped save-state format; legacy compatibility is not guaranteed.
 
 ## Controls
 
@@ -88,32 +96,26 @@ Buttons can be remapped per player in Settings, including turbo.
 In the game list: Y opens Settings, X refreshes the list, B exits, and L/R or
 ZL/ZR switch between All, Favourites and Recent.
 
-## Building
+## Development roadmap
 
-The instructions below describe the rebranded development branches; the public main branch still contains the upstream baseline.
+| Phases | Focus | Status |
+| --- | --- | --- |
+| 1–3 | Foundation, stability, diagnostics | Implemented |
+| 4–7 | Core, adaptive performance, audio, input | Implemented |
+| 8–11 | Library, themes, graphics, save manager | Implemented |
+| 12–14 | Compatibility, content, beta hardening | Implemented |
+| 15–17 | Fullscreen UI, library and save refinements | Implemented |
+| 18–20 | Performance, controller and final beta fixes | Implemented |
+| 21 | Release candidate | CI passed |
+| 22 | v1.0.0-Stable | Pending hardware acceptance |
 
-Requirements: [devkitPro pacman](https://devkitpro.org/wiki/devkitPro_pacman) with
-`switch-dev`, `switch-freetype` and `switch-zlib`, and the Switch 2 devkit
-(`sh install.sh` from ounce-devkit).
+## Known limitations
 
-```sh
-export DEVKITPRO=/opt/devkitpro
-make
-```
+Physical compatibility, long-session stability, power consumption and performance gains are still being evaluated. No measured speedup is claimed. Vulkan/HDR, multitap, named controller profiles and save-state thumbnails are deferred. Public source and stable binaries will be synchronized after acceptance.
 
-This builds `ns2snes-9x.nro`. `tests/host_build.sh` builds a host (Mac/Linux) test of
-the core bridge under AddressSanitizer.
+## Credits
 
-## Layout
-
-| Path | Contents |
-| --- | --- |
-| `source/` | The app: menus, settings, game loop, video (OpenGL ES), audio, input, rewind |
-| `romfs/shaders/` | Picture shaders (GLSL ES) and the NTSC encoder/decoder |
-| `native/bridge_snes9x.cpp` | C interface to Snes9x (frames, audio, states, cheats) |
-| `third_party/snes9x` | Snes9x (from libretro/snes9x, see `SOURCE.txt`) |
-| `tests/` | Host tests for the core bridge |
-| `licenses/` | Licences of the bundled components (also inside the app) |
+Original SW2SNES by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew and the kaiHEN community. NS2SNES-9X development by blueshockz47.
 
 ## Licence
 
