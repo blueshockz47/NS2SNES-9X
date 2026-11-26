@@ -4,11 +4,19 @@
 
 A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
 
-![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC7-blue) ![CI](https://img.shields.io/badge/RC7%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware-testing-orange)
+![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC12-blue) ![CI](https://img.shields.io/badge/RC12%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware-accepted-brightgreen)
 
 [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-> **First public beta coming soon.** RC7 passed host regression tests and ARM64 NRO compilation. Hardware testing is ongoing. The public main branch currently retains the upstream baseline; the features documented here describe the private RC7 development build. No NS2SNES-9X beta binary has been published yet.
+> **First public beta coming soon.** RC12 passed host regression tests and ARM64 NRO compilation. The developer completed the handheld hardware acceptance checklist, including touchscreen navigation and game launch/exit. The public main branch currently retains the upstream baseline; the features documented here describe the private RC12 development build. No NS2SNES-9X beta binary has been published yet.
+
+## What's new in the first beta
+
+- **Touch-enabled library:** tap the search bar to open the native keyboard, clear searches, switch views, select categories and change pages. Tap a game to select it, double-tap to launch, swipe vertically in List or horizontally in Grid to change pages.
+- **SNES Heritage interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
+- **Smart Cover Matching:** dedicated cover folder, exact and case-insensitive filename matching, conservative title normalization for region and revision tags, and fallback to ROM-sidecar artwork. Ambiguous matches are skipped.
+- **Modern game library:** fullscreen List and Grid, rapid page navigation, sorting, favourites, recent games, playtime and multiple ROM folders.
+- **Refined emulation:** ARM64 NEON conversion, adaptive performance, improved audio recovery, rewind and frame pacing, ten save slots and safer save handling.
 
 ## Highlights
 
@@ -35,7 +43,9 @@ Once the first public beta is available:
 SD card/
 ├── switch/
 │   └── ns2snes-9x/
-│       └── ns2snes-9x.nro
+│       ├── ns2snes-9x.nro
+│       └── covers/
+│           └── Super Mario World.png
 └── roms/
     └── snes/
         ├── Super Mario World.sfc
@@ -62,9 +72,25 @@ Close the emulator before replacing the NRO. Back up `/switch/ns2snes-9x/` first
 | + | Toggle List / Grid |
 | − | Native ROM search keyboard |
 | Y + − | Manual search fallback |
+| ZL + − | Clear active search |
 | X | Refresh library |
 | Y | Open Settings |
 | B | Back / exit confirmation |
+
+### Touchscreen (handheld)
+
+| Gesture | Action |
+| --- | --- |
+| Tap search field | Open native keyboard |
+| Tap Clear Search | Reset query |
+| Tap List / Grid or category | Switch view or category |
+| Tap L / R page badge | Change page |
+| Tap game | Select |
+| Double-tap game | Launch |
+| Swipe vertically in List | Previous / next page |
+| Swipe horizontally in Grid | Previous / next page |
+
+Touch support is currently limited to the library; Settings and in-game menus remain controller-operated.
 
 ### Settings
 
@@ -85,7 +111,7 @@ A short on-screen reminder appears when starting a game. The C button is not use
 
 ## Cover art
 
-No internet connection is needed. Put a PNG beside the ROM with exactly the same base filename:
+No internet connection is needed. The recommended location is `/switch/ns2snes-9x/covers/`, created automatically. Use the ROM basename for the PNG, for example `Aladdin (U) [!].png`. Alternatively, put a PNG beside the ROM:
 
 ```text
 /roms/snes/Aladdin (U) [!].sfc
@@ -94,7 +120,7 @@ No internet connection is needed. Put a PNG beside the ROM with exactly the same
 
 For ZIP ROMs, match the ZIP filename, not the internal ROM filename. PNG dimensions must be at most 1024 × 1024. Press X to refresh after copying images. The emulator preserves artwork aspect ratio and caches images. See the in-app **Settings → Cover Art** tab.
 
-Smart title/checksum matching and a centralized cover directory are planned for a later version, not included in RC7.
+The centralized folder supports exact, case-insensitive and normalized title matching (including common region/revision suffixes). A generic title can match a regional ROM when unambiguous. Exact filenames are recommended for regional variants. Checksum matching and online artwork retrieval are not included.
 
 ## Features
 
@@ -139,7 +165,7 @@ Fresh installations use SNES Classic theme, Balanced performance, one-frame run-
 ## Troubleshooting and feedback
 
 - **No games:** check ROM directory and extensions, then press X.
-- **No cover:** verify exact basename, PNG extension and dimensions; refresh the library.
+- **No cover:** verify the covers folder or sidecar path, basename, PNG extension and dimensions; refresh the library.
 - **Menu:** press ZL + ZR together, not C.
 - **Startup or exit issue:** note whether this is a fresh installation, and include the emulator log if available.
 - **Performance issue:** include game/region, handheld or docked mode, settings and benchmark CSV if available.
@@ -150,17 +176,17 @@ Fresh installations use SNES Classic theme, Balanced performance, one-frame run-
 
 | Milestone | Focus |
 | --- | --- |
-| v1.0.0-RC7 | Hardware acceptance in progress |
+| v1.0.0-RC12 | Hardware acceptance completed |
 | v1.0.0-Beta | First public beta after acceptance |
 | v1.0.0-Stable | Stable release after beta feedback |
-| v1.1 | Smart cover matching, metadata and premium library |
+| v1.1 | Expanded cover matching, metadata and premium library |
 | v1.2 | Advanced save manager |
 | v1.3 | Modern in-game menu |
 | v1.4 | Performance and battery improvements |
 | v1.5 | SwitchNest integration |
 | v2.0 | Investigate advanced Switch 2 features |
 
-Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
+Touchscreen Settings and in-game menu support are deferred until after the first beta. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
 
 ## Credits
 
