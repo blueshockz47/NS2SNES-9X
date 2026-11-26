@@ -4,23 +4,27 @@
 
 A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
 
-![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC15-blue) ![CI](https://img.shields.io/badge/RC15%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/RC15%20hardware-pending-orange)
+![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC20-blue) ![RC19 CI](https://img.shields.io/badge/RC19%20CI-passed-brightgreen) ![RC20](https://img.shields.io/badge/RC20-validation%20pending-orange)
 
 [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-> **First public beta in preparation.** The private v1.0.0-RC15 build passed host regression tests, ARM64 NRO compilation and artifact validation. RC15 console testing is pending. Public main retains the upstream source baseline; features below describe the development build. No public beta binary has been published yet.
+> **First public release in preparation.** RC19 passed CI and console cover-matching testing. RC20 adds further matching and Grid refinements; release awaits CI and console acceptance. Public main retains the upstream source baseline; the features below describe the private development builds. No public binary has been published yet.
 
-## What's new in the first beta
+## What's new in v1.0.0
 
 - **New identity:** NS2xSNES9x branding throughout the app, Homebrew Menu metadata, startup and credits screens, and renamed NRO and data directory. Existing fork data can be imported without overwriting destination files.
 
 - **Touch-enabled library:** tap the search bar to open the native keyboard, clear searches, switch views, select categories and change pages. Tap a game to select it, double-tap to launch, swipe vertically in List or horizontally in Grid to change pages.
 - **Retro-inspired interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
-- **Smart Cover Matching:** dedicated cover folder, exact and case-insensitive filename matching, conservative title normalization for region and revision tags, and fallback to ROM-sidecar artwork. Ambiguous matches are skipped.
+- **Smart Cover Matching:** dedicated cover folder, exact and case-insensitive filename matching, conservative title normalization for region and revision tags, and fallback to ROM-sidecar artwork. Supports PNG, JPG and JPEG, underscore-separated names, GoodTools/No-Intro region tags and conservative title matching. RC20 adds article, ampersand, subtitle and regional fallback refinements; hardware validation pending.
 - **Modern game library:** fullscreen List and Grid, rapid page navigation, sorting, favourites, recent games, playtime and multiple ROM folders.
 - **Refined emulation:** ARM64 NEON conversion, adaptive performance, improved audio recovery, rewind and frame pacing, ten save slots and safer save handling.
 
 - **Refined appearance:** updated Homebrew Menu icon, four additional brand-neutral themes, centered navigation controls, aligned settings labels and values, and bounded long text to reduce overlap.
+
+- **Cover Art Manager:** choose a persistent custom directory, recursively scan artwork, view progress, matched ROMs, unmatched images and invalid/oversized counts.
+- **Touch navigation:** Settings tabs, value selectors, folder selection, momentum-assisted Settings scrolling and library footer actions. Library swipes remain page-based.
+- **Adaptive artwork:** aspect-preserving List and Grid rendering without coloured placeholder gaps around loaded images. RC20 increases Grid artwork space and uses a single title line.
 
 ## Highlights
 
@@ -50,7 +54,7 @@ Change the theme under Settings → UI theme. Existing saved theme indices are p
 
 ## Installation
 
-Once the first public beta is available:
+Once the first public release is available:
 
 1. Set up kaiHEN and hbmenu on your Switch 2.
 2. Download **NS2xSNES9x.nro** from the [Releases page](https://github.com/blueshockz47/NS2SNES-9X/releases).
@@ -111,7 +115,7 @@ Close the emulator before replacing the NRO. Back up `/switch/NS2xSNES9x/` first
 | Swipe vertically in List | Previous / next page |
 | Swipe horizontally in Grid | Previous / next page |
 
-Touch support is currently limited to the library; Settings and in-game menus remain controller-operated.
+Settings supports touch tabs, value changes, swipe scrolling and Back. Cover Art Manager actions and folder selection also support touch. Library footer Settings, Refresh and Exit are touch-enabled; Exit requires confirmation. In-game menus remain controller-operated.
 
 ### Settings
 
@@ -132,26 +136,29 @@ A short on-screen reminder appears when starting a game. The C button is not use
 
 ## Cover art
 
-No internet connection is needed. The recommended location is `/switch/NS2xSNES9x/covers/`, created automatically. Use the ROM basename for the PNG, for example `Aladdin (U) [!].png`. Alternatively, put a PNG beside the ROM:
+No internet connection is needed. Default directory: `/switch/NS2xSNES9x/covers/`. Supported formats: PNG, JPG, JPEG (case-insensitive extensions), up to 1024 × 1024 pixels. Sidecar artwork beside ROMs supports basic filename matching; use the central directory for full smart matching.
 
-```text
-/roms/snes/Aladdin (U) [!].sfc
-/roms/snes/Aladdin (U) [!].png
-```
+| ROM | Artwork |
+| --- | --- |
+| Aladdin (U) [!].sfc | Aladdin.jpg |
+| ActRaiser 2 (U).sfc | actraiser_2_usa.jpg |
+| 2020 Super Baseball (U).sfc | 2020_super_baseball_usa.jpg |
 
-For ZIP ROMs, match the ZIP filename, not the internal ROM filename. PNG dimensions must be at most 1024 × 1024. Press X to refresh after copying images. The emulator preserves artwork aspect ratio and caches images. See the in-app **Settings → Cover Art** tab.
+For ZIP ROMs, use the ZIP basename. Open **Settings → Cover Art → Scan Cover Art** after adding images. Choose Change Folder to select a custom directory. The scanner includes subfolders, reports invalid images and unmatched artwork, and never renames or deletes original files.
 
-The centralized folder supports exact, case-insensitive and normalized title matching (including common region/revision suffixes). A generic title can match a regional ROM when unambiguous. Exact filenames are recommended for regional variants. Checksum matching and online artwork retrieval are not included.
+Exact matches take priority. Smart matching recognizes region aliases, revision and dump tags, underscores and common punctuation. RC20 adds conservative subtitle and regional fallback rules. Not every ROM has corresponding artwork; ambiguous matches can remain unmatched. No checksum matching or online downloads are included.
+
+**Hardware test (RC19):** 614 of 784 ROMs matched (78.32%), up from 1, with 765 valid images and zero invalid images in one test collection. This is not a universal coverage guarantee. RC20 results are pending.
 
 ## Features
 
 ### Library and interface
 - Edge-to-edge List View with selected-game cover preview and 12-cover Grid View.
 - Native Switch software keyboard, manual fallback, favourites, recently played, playtime and sorting by name, favourites, recent activity or playtime.
-- Multiple ROM folders, remembered selection, deduplicated scanning and bounded incremental PNG artwork loading.
+- Multiple ROM folders, remembered selection, deduplicated scanning and bounded incremental PNG/JPG/JPEG artwork loading.
 - Visible page counters, L/R paging and accelerated hold-to-scroll; ZL/ZR category indicators.
 - Eight themes: Classic Violet (factory default), Dark, OLED Black, Light, Retro Ivory, Neon Cyber, Retro CRT and Midnight Ocean. Six accent choices, instant palette preview and automatic preference saving.
-- Fullscreen Settings, Cover Art guide and Credits tabs; first-launch setup feedback and directory error screen.
+- Fullscreen Settings, Cover Art Manager and Credits tabs; first-launch setup feedback and directory error screen.
 
 ### Graphics and emulation
 - Snes9x core with SuperFX, SA-1, DSP, CX4, S-DD1, SPC7110 and other enhancement-chip support.
@@ -186,7 +193,7 @@ Fresh installations use Classic Violet theme, Balanced performance, one-frame ru
 ## Troubleshooting and feedback
 
 - **No games:** check ROM directory and extensions, then press X.
-- **No cover:** verify the covers folder or sidecar path, basename, PNG extension and dimensions; refresh the library.
+- **No cover:** verify the covers folder or sidecar path, supported extension and dimensions; run Scan Cover Art and inspect unmatched artwork.
 - **Menu:** press ZL + ZR together, not C.
 - **Startup or exit issue:** note whether this is a fresh installation, and include the emulator log if available.
 - **Performance issue:** include game/region, handheld or docked mode, settings and benchmark CSV if available.
@@ -201,8 +208,12 @@ Fresh installations use Classic Violet theme, Balanced performance, one-frame ru
 | v1.0.0-RC13 | Rebranding and migration; CI passed, hardware testing pending |
 | v1.0.0-RC14 | Updated Homebrew Menu icon; CI passed |
 | v1.0.0-RC15 | Eight themes and alignment refinements; CI passed, hardware testing pending |
-| v1.0.0-Beta | First public beta after acceptance |
-| v1.0.0-Stable | Stable release after beta feedback |
+| v1.0.0-RC16 | JPEG support and touchscreen Settings |
+| v1.0.0-RC17 | Cover Art Manager and touch footer controls |
+| v1.0.0-RC18 | Adaptive artwork layout; List hardware confirmed |
+| v1.0.0-RC19 | Smart filename matching; CI and matching hardware test passed |
+| v1.0.0-RC20 | Expanded matching and larger Grid artwork; validation pending |
+| v1.0.0 | First public release after final acceptance |
 | v1.1 | Expanded cover matching, metadata and premium library |
 | v1.2 | Advanced save manager |
 | v1.3 | Modern in-game menu |
@@ -210,7 +221,7 @@ Fresh installations use Classic Violet theme, Balanced performance, one-frame ru
 | Future (deferred) | Optional cover downloader via SwitchNest PC bridge, FTP transfer and Downloads/snes/cover cache; reconsider direct downloads if safe networking becomes available |
 | v2.0 | Investigate advanced Switch 2 features |
 
-The proposed cover downloader is not implemented; manual cover installation remains supported. DNS filtering alone does not guarantee isolation. Touchscreen Settings and in-game menu support are deferred until after the first beta. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
+The proposed cover downloader is not implemented; manual cover installation remains supported. DNS filtering alone does not guarantee isolation. Touchscreen in-game menu support remains deferred. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
 
 ## Credits
 
@@ -228,6 +239,6 @@ It also includes:
 - libretro-common (MIT)
 - Roboto (Apache 2.0) and Source Code Pro (SIL OFL 1.1) fonts
 - libounce and libnx (ISC), libkaihen (ISC), OunceVK / Mesa (MIT), mimalloc (MIT),
-  FreeType (FTL), HarfBuzz (MIT), libpng, zlib, minizip (zlib licence) and bzip2
+  FreeType (FTL), HarfBuzz (MIT), libpng, libjpeg-turbo (development build), zlib, minizip (zlib licence) and bzip2
 
 Their licence texts are in `licenses/`.
