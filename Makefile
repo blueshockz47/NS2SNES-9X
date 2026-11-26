@@ -9,11 +9,11 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITPRO)/libounce/switch2_rules
 
-APP_TITLE	:=	SW2SNES
-APP_AUTHOR	:=	Rodpad
-APP_VERSION	:=	1.0.1
+APP_TITLE := NS2xSNES9x
+APP_AUTHOR := blueshockz47 (based on Rodpad)
+APP_VERSION := 1.0.0-Stable
 
-TARGET		:=	sw2snes
+TARGET := NS2xSNES9x
 BUILD		:=	build
 S9X		:=	third_party/snes9x
 LC		:=	$(S9X)/libretro/libretro-common
@@ -21,7 +21,7 @@ SOURCES		:=	source native $(S9X) $(S9X)/apu $(S9X)/apu/bapu/dsp $(S9X)/apu/bapu/
 DATA		:=	data
 INCLUDES	:=	source $(S9X) $(S9X)/apu $(S9X)/apu/bapu $(S9X)/libretro $(LC)/include
 ROMFS		:=	romfs
-ICON		:=	sw2snes.jpg
+ICON		:=	icon.jpg
 
 ARCH	:=	$(SWITCH2_CPU) -mtp=soft -fPIE
 CFLAGS	:=	-g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES) -Wno-unused-function
@@ -29,7 +29,7 @@ CFLAGS	+=	$(INCLUDE) -D__SWITCH__ -DNDEBUG -D__LIBRETRO__ -DALLOW_CPU_OVERCLOCK 
 CXXFLAGS	:= $(CFLAGS) -std=gnu++17
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
-LIBS	:= -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lfreetype -lharfbuzz -lpng16 -lbz2 -lminizip -lz -lnx
+LIBS	:= -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lfreetype -lharfbuzz -lpng16 -ljpeg -lbz2 -lminizip -lz -lnx
 LIBDIRS	:= $(PORTLIBS) $(LIBNX)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))

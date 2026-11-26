@@ -1,5 +1,7 @@
 // SW2SNES: Snes9x adapter (core table), run-ahead and rewind history.
 #include "core.h"
+#include "rewind_delta.h"
+#include "core_opt.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +34,8 @@ int snes_freeze(uint8_t*, long);
 int snes_unfreeze(const uint8_t*, long);
 int snes_set_cheats(const char**, int);
 int snes_cheat_valid(const char*);
+int snes_is_pal();
+const char* snes_chips();
 }
 
 const char* core_rom_name = "";
@@ -63,7 +67,7 @@ const CoreApi SNES9X_CORE = {
     snes_set_audio, snes_set_audio_ratio, snes_audio_take, snes_audio, snes_audio_reset, snes_set_audio_discard,
     snes_video, snes_video_pitch, snes_video_width, snes_video_height,
     snes_has_battery, snes_sram, snes_sram_size, snes_state_save, snes_state_buffer, snes_state_load,
-    runahead, snes_set_cheats, snes_cheat_valid,
+    runahead, snes_set_cheats, snes_cheat_valid, snes_is_pal, snes_chips,
 };
 
 /* ---------------- Rewind history ----------------
@@ -82,32 +86,25 @@ static void encode(const uint8_t* a, const uint8_t* b, size_t n, std::vector<uin
   size_t i = 0;
   auto put32 = [&](uint32_t v) { out.insert(out.end(), (uint8_t*)&v, (uint8_t*)&v + 4); };
   while (i < n) {
-    size_t z = i;
-    while (z < n && a[z] == b[z]) z++;
+    size_t z = i + core_opt::equalPrefix(a+i,b+i,n-i);
     size_t l = z;
     while (l < n && (a[l] != b[l] || (l + 1 < n && a[l + 1] != b[l + 1]) || (l + 2 < n && a[l + 2] != b[l + 2]))) l++;  // literal runs absorb short gaps
     put32((uint32_t)(z - i)); put32((uint32_t)(l - z));
-    for (size_t k = z; k < l; k++) out.push_back(a[k] ^ b[k]);
+    size_t offset = out.size();
+    out.resize(offset + l - z);
+    for (size_t k = z; k < l; k++) out[offset + k - z] = a[k] ^ b[k];
     i = l;
   }
 }
-static void applyDelta(std::vector<uint8_t>& s, const std::vector<uint8_t>& d) {
-  size_t i = 0, p = 0;
-  while (p + 8 <= d.size()) {
-    uint32_t z, l; memcpy(&z, &d[p], 4); memcpy(&l, &d[p + 4], 4); p += 8;
-    i += z;
-    for (uint32_t k = 0; k < l && i < s.size(); k++) s[i++] ^= d[p + k];
-    p += l;
-  }
-}
-bool rewind_init(long budgetBytes) { budget = budgetBytes; rewind_clear(); return true; }
+bool rewind_init(long budgetBytes) { budget = budgetBytes > 0 ? budgetBytes : 0; rewind_clear(); return true; }
 void rewind_clear() { deltas.clear(); used = 0; cur.clear(); }
 bool rewind_push() {
   long sz = snes_state_size();
-  if (sz <= 0) return false;
+  if (sz <= 0 || budget <= 0) return false;
   if ((long)scratch.size() != sz) scratch.assign(sz, 0);
   if (!snes_freeze(scratch.data(), sz)) return false;
-  if ((long)cur.size() == sz) {
+  if ((long)cur.size() != sz) rewind_clear();
+  if ((long)cur.size() == sz && budget > 0) {
     deltas.emplace_back();
     encode(scratch.data(), cur.data(), sz, deltas.back());
     used += (long)deltas.back().size();
@@ -118,10 +115,16 @@ bool rewind_push() {
 }
 bool rewind_pop() {
   if (deltas.empty() || cur.empty()) return false;
-  applyDelta(cur, deltas.back());
+  scratch = cur;
+  if (!rewind_detail::applyDelta(scratch, deltas.back()) || !snes_unfreeze(scratch.data(), (long)scratch.size())) {
+    snes_unfreeze(cur.data(), (long)cur.size());
+    rewind_clear();
+    return false;
+  }
+  cur.swap(scratch);
   used -= (long)deltas.back().size();
   deltas.pop_back();
-  return snes_unfreeze(cur.data(), (long)cur.size()) != 0;
+  return true;
 }
 bool rewind_reload() { return !cur.empty() && snes_unfreeze(cur.data(), (long)cur.size()) != 0; }
 int rewind_count() { return (int)deltas.size(); }

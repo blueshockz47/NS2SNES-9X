@@ -16,3 +16,7 @@ test-roms/
 *.fig
 *.swc
 *.zip
+
+/NS2xSNES9x.nro
+/NS2xSNES9x.elf
+/NS2xSNES9x.nacp

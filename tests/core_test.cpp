@@ -13,6 +13,8 @@
 extern "C" {
 const char* snes_load(const uint8_t*, long, const char*);
 int snes_frame(int, int, int);
+int snes_is_pal();
+const char* snes_chips();
 int snes_audio_take();
 int16_t* snes_audio();
 uint32_t* snes_video();
@@ -44,11 +46,15 @@ int main(int argc, char** argv) {
   FILE* f = fopen(argv[1], "rb");
   if (!f) { printf("cannot open\n"); return 1; }
   fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+  if(n<0x8000||n>12*1024*1024||frames<=0){fclose(f);return 1;}
   std::vector<uint8_t> d(n);
   if (fread(d.data(), 1, n, f) != (size_t)n) return 1;
   fclose(f);
   const char* e = snes_load(d.data(), n, argv[1]);
   if (e) { printf("LOAD ERROR: %s\n", e); return 1; }
+  if(const char* region=getenv("EXPECT_PAL")){if(snes_is_pal()!=atoi(region))return 1;}
+  if(const char* chip=getenv("EXPECT_CHIP")){if(!strstr(snes_chips(),chip))return 1;}
+  if(getenv("SMOKE_ONLY")){for(int i=0;i<60;i++){if(snes_frame(0,0,1)<0)return 1;snes_audio_take();}long size=snes_state_size();if(size<=0||size>16*1024*1024)return 1;std::vector<uint8_t> state(size);if(!snes_freeze(state.data(),size))return 1;for(int i=0;i<64;i++){if(!snes_unfreeze(state.data(),size)||snes_frame(0,0,1)<0)return 1;snes_audio_take();}snes_unload();return 0;}
   printf("title '%s'  battery %d (%d bytes)  state %ld bytes\n", snes_rom_title(), snes_has_battery(), snes_sram_size(), snes_state_size());
   fflush(stdout);
   long audio = 0;
@@ -66,8 +72,9 @@ int main(int argc, char** argv) {
   printf("%d frames: picture %dx%d (hash %08x), audio %.1f samples/frame (%.0f Hz)\n", frames, w, h, hash, audio / (double)frames, audio / (double)frames * 60.0988);
 
   long sz = snes_state_size();
+  if(sz<=0||sz>16*1024*1024)return 1;
   std::vector<uint8_t> st(sz), ra(sz);
-  snes_freeze(st.data(), sz);
+  if(!snes_freeze(st.data(), sz))return 1;
   std::vector<int16_t> b1, b2, b3;
   auto run = [&](std::vector<int16_t>& out, bool ahead) {
     snes_audio_reset();  // same resampler start for every comparison run
@@ -84,6 +91,7 @@ int main(int argc, char** argv) {
   run(b1, false);
   std::vector<uint32_t> p1(snes_video(), snes_video() + 512 * 478);
   snes_unfreeze(st.data(), sz); run(b2, false);
+  bool replayOK=memcmp(p1.data(),snes_video(),512*478*4)==0&&b1==b2;
   printf("state replay: picture %s, audio %s\n", memcmp(p1.data(), snes_video(), 512 * 478 * 4) ? "DIFFERS" : "identical", b1 == b2 ? "identical" : "DIFFERS");
   snes_unfreeze(st.data(), sz); run(b3, true);
   size_t m = b1.size() < b3.size() ? b1.size() : b3.size(), diff = 0;
@@ -111,5 +119,5 @@ int main(int argc, char** argv) {
   printf("rewind restore exact: %d/%d\n", ok, checked);
   snes_unload();
   printf("done\n");
-  return 0;
+  return replayOK && b1.size()==b3.size() && diff==0 && checked>0 && ok==checked ? 0 : 1;
 }

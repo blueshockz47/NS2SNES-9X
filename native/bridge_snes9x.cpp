@@ -12,6 +12,7 @@
 #include <math.h>
 #include <string>
 
+#include "../source/core_opt.h"
 #include "snes9x.h"
 #include "memmap.h"
 #include "apu/apu.h"
@@ -23,6 +24,7 @@
 #include "ppu.h"
 #include "cpuexec.h"
 #include "fxemu.h"
+#include "msu1.h"
 
 #define EXPORT extern "C" __attribute__((used, visibility("default")))
 
@@ -50,7 +52,10 @@ void S9xAutoSaveSRAM() {}
 void S9xInitInputDevices() {}
 const char* S9xStringInput(const char* in) { return in; }
 const char* S9xBasename(const char* in) { return in; }
-std::string S9xGetDirectory(s9x_getdirtype) { return std::string("."); }
+std::string S9xGetDirectory(s9x_getdirtype type) {
+  if(type==ROMFILENAME_DIR){auto pos=rom_name.find_last_of("/");if(pos!=std::string::npos)return rom_name.substr(0,pos+1);}
+  return ".";
+}
 bool8 S9xInitUpdate() { return TRUE; }
 // End of a frame: convert the picture to RGBA.
 bool8 S9xDeinitUpdate(int width, int height) {
@@ -60,12 +65,7 @@ bool8 S9xDeinitUpdate(int width, int height) {
   for (int y = 0; y < height; y++) {
     const uint16_t* in = (const uint16_t*)((const uint8_t*)GFX.Screen + (size_t)y * GFX.Pitch);
     uint32_t* out = rgba + y * MAX_W;
-    for (int x = 0; x < width; x++) {
-      uint16_t p = in[x];
-      uint32_t r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
-      r = (r << 3) | (r >> 2); g = (g << 2) | (g >> 4); b = (b << 3) | (b >> 2);
-      out[x] = 0xff000000u | (b << 16) | (g << 8) | r;
-    }
+    core_opt::convert(in, out, width > 0 ? (size_t)width : 0);
   }
   have_frame = true;
   return TRUE;
@@ -152,7 +152,7 @@ EXPORT const char* snes_load(const uint8_t* data, long size, const char* name) {
   updateStep();
   return 0;
 }
-EXPORT void snes_unload() { loaded = false; have_frame = false; S9xDeleteCheats(); }
+EXPORT void snes_unload() { S9xMSU1DeInit(); loaded = false; have_frame = false; S9xDeleteCheats(); }
 EXPORT void snes_reset(int hard) { if (!loaded) return; if (hard) S9xReset(); else S9xSoftReset(); }
 
 // One frame. pad bits: SNES_*_MASK (snes9x.h). render=0 skips drawing.
@@ -229,3 +229,7 @@ EXPORT int snes_cheat_valid(const char* code) {
   return (int)Cheat.group.size() == before;
 }
 EXPORT const char* snes_rom_title() { return loaded ? Memory.ROMName : ""; }
+
+EXPORT int snes_is_pal() { return loaded && Settings.PAL ? 1 : 0; }
+
+EXPORT const char* snes_chips(){static std::string s;s.clear();if(!loaded)return "None";auto add=[&](const char* name){if(!s.empty())s+=", ";s+=name;};if(Settings.MSU1)add("MSU-1");if(Settings.SuperFX)add("Super FX");if(Settings.SA1)add("SA-1");if(Settings.DSP)add("DSP");if(Settings.SDD1)add("S-DD1");return s.empty()?"None":s.c_str();}

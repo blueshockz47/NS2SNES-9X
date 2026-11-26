@@ -33,6 +33,8 @@ struct CoreApi {
   int (*runahead)(int, int, int);
   int (*set_cheats)(const char** codes, int n);
   int (*cheat_valid)(const char* code);
+  int (*is_pal)();
+  const char* (*chips)();
 };
 extern const CoreApi SNES9X_CORE;
 extern const char* core_rom_name;  // file name, for the core's own heuristics

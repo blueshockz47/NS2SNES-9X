@@ -1,3 +1,4 @@
+#include "graphics_policy.h"
 // SW2SNES front end (from SW2NES): OpenGL ES 3 drawing (rects, text, game picture).
 #include "uigfx.h"
 
@@ -5,12 +6,15 @@
 #include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 #include <png.h>
+#include "cover_policy.h"
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <switch.h>
 #include <switch2/services/vi2.h>
 
 #include <stdio.h>
+#include <jpeglib.h>
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <map>
@@ -23,6 +27,7 @@ static EGLContext context = EGL_NO_CONTEXT;
 static EGLSurface surface = EGL_NO_SURFACE;
 static GLuint vao = 0, vbo = 0;
 static GLuint rectProg = 0, texProg = 0;
+static void releaseGpuObjects();
 static void timerInit(); static void timerBegin(); static void timerEnd();  // GPU timing (below)
 static GLint rRect, rRadius, rBorder, rFill, rBorderColor, rScreen;
 static GLint tScreen, tTex, tMode, tColor;
@@ -163,7 +168,7 @@ static std::vector<float> verts;
 
 static void setScreen(GLint loc) { glUniform2f(loc, SCREEN_W, SCREEN_H); }
 
-float text(const std::string& s, float x, float y, float size, Color c, Font f) {
+float text(const std::string& s, float x, float y, float size, Color c, Font f, float slant) {
   x *= UI_SCALE; y *= UI_SCALE; size *= UI_SCALE;
   int px = (int)(size + 0.5f);
   FT_Face face = faces[f];
@@ -178,6 +183,7 @@ float text(const std::string& s, float x, float y, float size, Color c, Font f) 
       float x0 = pen + g.left, y0 = baseline - g.top, x1 = x0 + g.w, y1 = y0 + g.h;
       float q[] = {x0, y0, g.u0, g.v0, x1, y0, g.u1, g.v0, x0, y1, g.u0, g.v1,
                    x1, y0, g.u1, g.v0, x1, y1, g.u1, g.v1, x0, y1, g.u0, g.v1};
+      if(slant!=0)for(int j=0;j<24;j+=4)q[j]+=(baseline-q[j+1])*slant;
       verts.insert(verts.end(), q, q + 24);
     }
     pen += g.advance;
@@ -266,13 +272,15 @@ void pictureSetSignal(Picture* p, int signal, const float decode[4], float gamma
     glGenFramebuffers(1, &p->fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, p->ntscTex, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) p->signal = 0;
+    bool ready=glCheckFramebufferStatus(GL_FRAMEBUFFER)==GL_FRAMEBUFFER_COMPLETE;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if(!ready){glDeleteFramebuffers(1,&p->fbo);glDeleteTextures(1,&p->ntscTex);p->fbo=p->ntscTex=0;p->signal=0;}
   }
 }
 void pictureSetFrameCount(Picture* p, float emuFrame) { p->emuFrame = emuFrame; }
 void pictureUpload(Picture* p, const uint32_t* rgba, int w, int h, int pitch) {
-  p->fw = w < 1 ? 1 : w > p->w ? p->w : w; p->fh = h < 1 ? 1 : h > p->h ? p->h : h;
+  if(!p||!rgba||!graphics_policy::validUpload(w,h,pitch,p->w,p->h))return;
+  p->fw=w;p->fh=h;
   glBindTexture(GL_TEXTURE_2D, p->tex);
   glPixelStorei(GL_UNPACK_ROW_LENGTH, pitch);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, p->fw, p->fh, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
@@ -294,10 +302,11 @@ void pictureSetCrt(Picture* p, const uint8_t* rowAlpha, int rows, const uint8_t*
   p->crtRows = rows; p->crtCols = cols;
 }
 void pictureDraw(Picture* p, int x, int y, int dw, int dh, int sx, int sy, int sw, int sh, float dim) {
-  int idx = p->shader >= 0 && p->shader < progCount && progs[p->shader].prog ? p->shader : 0;
+  if(!p||dw<=0||dh<=0||sw<=0||sh<=0)return;
+  int idx=graphics_policy::shaderChoice(p->shader,progCount,p->shader>=0&&p->shader<progCount&&progs[p->shader].prog);
   const PicProg& g = progs[idx];
   if (!g.prog) return;
-  bool ntsc = p->signal > 0 && p->fbo;
+  bool ntsc=graphics_policy::signalReady(p->signal,ntscProg!=0,p->fbo!=0);
   if (ntsc) {
     // Pass 1: decode the composite signal into the (3W x H) texture.
     glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
@@ -322,9 +331,9 @@ void pictureDraw(Picture* p, int x, int y, int dw, int dh, int sx, int sy, int s
   glUseProgram(g.prog);
   glUniform2f(g.screen, SCREEN_W, SCREEN_H);
   glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, ntsc ? p->ntscTex : p->tex); glUniform1i(g.tex, 0);
-  glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, p->rows); glUniform1i(g.rows, 1);
-  glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, p->cols); glUniform1i(g.cols, 2);
-  glActiveTexture(GL_TEXTURE3); glBindTexture(GL_TEXTURE_2D, p->tex); glUniform1i(g.rgbTex, 3);
+  if(g.rows>=0){glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,p->rows);glUniform1i(g.rows,1);}
+  if(g.cols>=0){glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,p->cols);glUniform1i(g.cols,2);}
+  if(g.rgbTex>=0){glActiveTexture(GL_TEXTURE3);glBindTexture(GL_TEXTURE_2D,p->tex);glUniform1i(g.rgbTex,3);}
   glActiveTexture(GL_TEXTURE0);
   glUniform2f(g.nesOff, (float)sx, (float)sy);
   glUniform2f(g.nesSrc, (float)sw, (float)sh);
@@ -406,14 +415,49 @@ struct Image { GLuint tex; int w, h; };
 Image* imageCreate(int w, int h) {
   Image* im = new Image();
   im->w = w; im->h = h; im->tex = makeTexture(GL_NEAREST);
+  if(!im->tex){delete im;return nullptr;}
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   return im;
 }
+Image* imageLoadPng(const char* path,int& w,int& h) {
+  png_image p{};p.version=PNG_IMAGE_VERSION;
+  if(!png_image_begin_read_from_file(&p,path)){png_image_free(&p);return nullptr;}
+  if(!cover_policy::valid(p.width,p.height)){png_image_free(&p);return nullptr;}
+  p.format=PNG_FORMAT_RGBA;
+  std::vector<uint32_t> pixels(size_t(p.width)*p.height);
+  if(!png_image_finish_read(&p,nullptr,pixels.data(),0,nullptr)){png_image_free(&p);return nullptr;}
+  w=p.width;h=p.height;png_image_free(&p);
+  Image* im=imageCreate(w,h);if(!im)return nullptr;imageUpload(im,pixels.data());return im;
+}
+struct CoverJpegError { jpeg_error_mgr base; jmp_buf jump; };
+static void coverJpegError(j_common_ptr c){longjmp(reinterpret_cast<CoverJpegError*>(c->err)->jump,1);}
+Image* imageLoadCover(const char* path,int& w,int& h){
+  if(cover_policy::format(path)==0)return imageLoadPng(path,w,h);
+  FILE* f=fopen(path,"rb");if(!f)return nullptr;
+  // Heap state survives longjmp; no C++ objects are constructed across decoder calls.
+  struct State {jpeg_decompress_struct c; CoverJpegError err; unsigned char* pixels; bool created;};
+  State* s=(State*)calloc(1,sizeof(State));if(!s){fclose(f);return nullptr;}
+  s->c.err=jpeg_std_error(&s->err.base);s->err.base.error_exit=coverJpegError;
+  if(setjmp(s->err.jump)){if(s->created)jpeg_destroy_decompress(&s->c);free(s->pixels);free(s);fclose(f);return nullptr;}
+  s->created=true;jpeg_create_decompress(&s->c);jpeg_stdio_src(&s->c,f);
+  jpeg_read_header(&s->c,TRUE);
+  if(!cover_policy::valid(s->c.image_width,s->c.image_height))longjmp(s->err.jump,1);
+  s->c.out_color_space=JCS_RGB;jpeg_start_decompress(&s->c);
+  if(s->c.output_components!=3)longjmp(s->err.jump,1);
+  unsigned width=s->c.output_width,height=s->c.output_height;
+  s->pixels=(unsigned char*)malloc(size_t(width)*height*4);if(!s->pixels)longjmp(s->err.jump,1);
+  unsigned char row[1024*3];
+  while(s->c.output_scanline<height){unsigned y=s->c.output_scanline;JSAMPROW p=row;if(jpeg_read_scanlines(&s->c,&p,1)!=1)longjmp(s->err.jump,1);for(unsigned x=0;x<width;x++){auto d=s->pixels+4*(y*width+x);d[0]=row[3*x];d[1]=row[3*x+1];d[2]=row[3*x+2];d[3]=255;}}
+  jpeg_finish_decompress(&s->c);jpeg_destroy_decompress(&s->c);fclose(f);
+  w=width;h=height;Image* im=imageCreate(w,h);if(im)imageUpload(im,reinterpret_cast<uint32_t*>(s->pixels));free(s->pixels);free(s);return im;
+}
 void imageUpload(Image* im, const uint32_t* rgba) {
+  if(!im||!rgba)return;
   glBindTexture(GL_TEXTURE_2D, im->tex);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, im->w, im->h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 }
 void imageDraw(Image* im, float x, float y, float w, float h, float alpha) {
+  if(!im||w<=0||h<=0)return;
   x *= UI_SCALE; y *= UI_SCALE; w *= UI_SCALE; h *= UI_SCALE;
   glUseProgram(texProg); setScreen(tScreen);
   glUniform1i(tMode, 0); glUniform4f(tColor, 1, 1, 1, alpha);
@@ -472,6 +516,7 @@ bool init(std::string& error) {
 }
 
 void shutdown() {
+  if (display != EGL_NO_DISPLAY && context != EGL_NO_CONTEXT && eglGetCurrentContext() == context) releaseGpuObjects();
   for (int i = 0; i < 3; i++) if (faces[i]) FT_Done_Face(faces[i]);
   if (ft) FT_Done_FreeType(ft);
   if (display != EGL_NO_DISPLAY) {
@@ -480,7 +525,7 @@ void shutdown() {
     if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
     eglTerminate(display);
   }
-  display = EGL_NO_DISPLAY;
+  display = EGL_NO_DISPLAY; context = EGL_NO_CONTEXT; surface = EGL_NO_SURFACE;
 }
 
 void beginFrame(Color c) {
@@ -571,6 +616,37 @@ void waitPrevious() {
   glClientWaitSync(lastFence, GL_SYNC_FLUSH_COMMANDS_BIT, 100000000ull);
   glDeleteSync(lastFence); lastFence = 0;
   waitMs += msNow() - t0;
+}
+
+static void releaseGpuObjects() {
+  timerEnd();
+  glFinish();
+  if (lastFence) { glDeleteSync(lastFence); lastFence = 0; }
+  if (timerOk) {
+    auto del = (PFNGLDELETEQUERIESEXTPROC)eglGetProcAddress("glDeleteQueriesEXT");
+    if (del) del(NQ, queries);
+    timerOk = false;
+  }
+  glUseProgram(0);
+  glBindVertexArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  if (atlas) { glDeleteTextures(1, &atlas); atlas = 0; }
+  if (vbo) { glDeleteBuffers(1, &vbo); vbo = 0; }
+  if (vao) { glDeleteVertexArrays(1, &vao); vao = 0; }
+  for (auto& p : progs) { if (p.prog) glDeleteProgram(p.prog); p.prog = 0; }
+  if (ntscProg) { glDeleteProgram(ntscProg); ntscProg = 0; }
+  if (rectProg) { glDeleteProgram(rectProg); rectProg = 0; }
+  if (texProg) { glDeleteProgram(texProg); texProg = 0; }
+  glFinish();
+}
+
+void prepareShutdown() {
+  if(display==EGL_NO_DISPLAY||context==EGL_NO_CONTEXT)return;
+  timerEnd();
+  waitPrevious();
+  glFinish();
+  setHighRefresh(false);
 }
 
 }  // namespace gfx

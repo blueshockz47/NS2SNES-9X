@@ -19,6 +19,7 @@ Color rgb(uint32_t hex, float alpha = 1.0f);  // 0xRRGGBB
 
 bool init(std::string& error);
 void shutdown();
+void prepareShutdown();
 void beginFrame(Color clear);
 // Swaps. Frame queue modes (input latency): 0 = driver default, 1 = at most one
 // frame in flight (waitPrevious() before reading input), 2 = wait for the GPU
@@ -41,7 +42,7 @@ void noClip();
 enum Font { REGULAR = 0, BOLD = 1, MONO = 2 };
 float textWidth(const std::string& s, float size, Font f = REGULAR);
 // Draws one line with its top at y (line box of 1.25 * size); returns its width.
-float text(const std::string& s, float x, float y, float size, Color c, Font f = REGULAR);
+float text(const std::string& s, float x, float y, float size, Color c, Font f = REGULAR, float slant = 0);
 // Fits text into width with "...", for list rows.
 std::string ellipsize(const std::string& s, float width, float size, Font f = REGULAR);
 
@@ -77,6 +78,8 @@ bool shaderOk(int i);
 // A small RGBA image (graph, icons), updated whole.
 struct Image;
 Image* imageCreate(int w, int h);
+Image* imageLoadCover(const char* path,int& w,int& h);
+Image* imageLoadPng(const char* path,int& w,int& h);
 void imageUpload(Image* im, const uint32_t* rgba);
 void imageDraw(Image* im, float x, float y, float w, float h, float alpha = 1.0f);
 void imageDestroy(Image* im);

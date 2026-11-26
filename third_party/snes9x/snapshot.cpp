@@ -1574,6 +1574,7 @@ int S9xUnfreezeFromStream (ByteStream *stream)
 	if (local_srtc)				delete [] local_srtc;
 	if (local_rtc_data)			delete [] local_rtc_data;
 	if (local_bsx_data)			delete [] local_bsx_data;
+	if (local_msu1_data)			delete [] local_msu1_data;
 	return (result);
 }
 

@@ -1,3 +1,18 @@
+#include <cstdlib>
+#include "branding_migration.h"
+#include <cerrno>
+#include "timing_policy.h"
+#include "content_policy.h"
+#include "rom_patch.h"
+#include "save_policy.h"
+#include "ui_theme.h"
+#include "library_policy.h"
+#include "cover_policy.h"
+#include <unordered_set>
+#include <unordered_map>
+#include "input_policy.h"
+#include "audio_policy.h"
+#include "adaptive_performance.h"
 // SW2SNES for hbmenu (Switch 2 homebrew, kaiHEN): SNES emulator front end.
 // A port of the CivHomebrew app (app/sw2nes.js): the same screens, settings,
 // save formats and defaults, drawn with OpenGL ES at 1920x1080.
@@ -26,7 +41,7 @@ static const CoreApi* C = &SNES9X_CORE;
 #include <minizip/unzip.h>
 
 #ifndef APP_VERSION
-#define APP_VERSION "2.0.0"
+#define APP_VERSION "1.0.0-Stable"
 #endif
 
 using std::string;
@@ -38,8 +53,11 @@ using gfx::Color;
 // RetroArch users and frontends use); any folder can be chosen in Settings.
 static const char* DEFAULT_ROM_DIR = "sdmc:/roms/snes";
 static std::string romDir = DEFAULT_ROM_DIR;
-static const char* DATA_DIR = "sdmc:/switch/sw2snes";
-static const double NES_RATE = 60.0988;
+static std::vector<std::string> extraRomDirs;
+static bool addingRomFolder=false, pickingCoverFolder=false;
+static string customCoverDir;
+static const char* DATA_DIR = "sdmc:/switch/NS2xSNES9x";
+static double gameRate = timing_policy::rate(false);
 // Npad button bits (the same values the JS app uses).
 enum { B_A = 1, B_B = 2, B_X = 4, B_Y = 8, B_L = 64, B_R = 128, B_PLUS = 1024, B_MINUS = 2048,
        B_LEFT = 4096, B_UP = 8192, B_RIGHT = 16384, B_DOWN = 32768, B_SL = 65536, B_SU = 131072, B_SR = 262144, B_SD = 524288 };
@@ -47,10 +65,15 @@ enum { B_A = 1, B_B = 2, B_X = 4, B_Y = 8, B_L = 64, B_R = 128, B_PLUS = 1024, B
 enum { S_R = 1 << 4, S_L = 1 << 5, S_X = 1 << 6, S_A = 1 << 7, S_RIGHT = 1 << 8, S_LEFT = 1 << 9, S_DOWN = 1 << 10, S_UP = 1 << 11,
        S_START = 1 << 12, S_SELECT = 1 << 13, S_Y = 1 << 14, S_B = 1 << 15 };
 
-static const uint32_t C_BG = 0x0b0d12, C_PANEL = 0x151924, C_LINE = 0x2a3142, C_TEXT = 0xeef1f7, C_DIM = 0x9aa3b5, C_ACCENT = 0xe4463b, C_SEL = 0x2b3550;
+static uint32_t C_BG = 0x0b0d12, C_PANEL = 0x151924, C_LINE = 0x2a3142, C_TEXT = 0xeef1f7, C_DIM = 0x9aa3b5, C_ACCENT = 0xe4463b, C_SEL = 0x2b3550;
+static int themeIndex=3, accentIndex=0, screenBorder=0;
+static const std::vector<std::string> BORDER_NAMES={"Black","Charcoal","Classic Purple","Theme accent"};
+static const std::vector<std::string> THEME_NAMES={"Dark","OLED Black","Light","Classic Violet","Retro Ivory","Neon Cyber","Retro CRT","Midnight Ocean"};
+static const std::vector<std::string> ACCENT_NAMES={"Theme default","Red","Blue","Green","Purple","Gold"};
+static void applyTheme(){auto p=ui_theme::get(themeIndex,accentIndex);C_BG=p.bg;C_PANEL=p.panel;C_LINE=p.line;C_TEXT=p.text;C_DIM=p.dim;C_ACCENT=p.accent;C_SEL=p.sel;}
 static Color col(uint32_t c, float a = 1) { return gfx::rgb(c, a); }
 
-static const vector<string> ASPECTS = {"1:1", "8:7", "4:3", "Stretch"}, SCALES = {"Integer", "Fit"}, CROPS = {"Show all", "Hide sides", "Hide all edges"};
+static const vector<string> ASPECTS = {"1:1", "8:7", "4:3", "Stretch", "Switch 2 (16:9)"}, SCALES = {"Integer", "Fit"}, CROPS = {"Show all", "Hide sides", "Hide all edges"};
 static const vector<string> CRT_STYLES = {"Off", "Scanlines", "Soft scanlines", "Bold scanlines", "Aperture grille", "Scanlines + grille",
                                           "Slot mask", "Shadow mask", "Dot mask", "LCD matrix", "Screen door"};
 static const vector<int> CRT_CHOICES = {0, 1, 2, 3, 4, 5, 9, 10};
@@ -96,22 +119,47 @@ static const int TURBO_PERIOD[4] = {6, 4, 3, 2};
 static const vector<string> VOLUMES = {"0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"};
 static const vector<string> FILTERS = {"Off", "Soft", "Strong"};
 static const vector<string> LIST_VIEWS = {"All", "Favourites", "Recent"};
-static const int RECENT_MAX = 5, SLOT_COUNT = 4;
+static const int RECENT_MAX = 5, SLOT_COUNT = save_policy::slots;
 
 /* ---------------- State ---------------- */
 // Defaults (the author's chosen setup, 2026-11-14).
-static int aspectMode = 2, scaleMode = 0, cropMode = 2, crtStyle = 0, paletteMode = 0, statsLevel = 0;
+static int aspectMode = 4, scaleMode = 0, cropMode = 2, crtStyle = 0, paletteMode = 0, statsLevel = 1;
 static int runAhead = 1, frameDelay = 2, audioBuffer = 0, displayMode = 1, ffMode = 1, ffSpeed = 1;
 static bool rewindOn = true;
+static int performanceProfile = 2; // Balanced
+static adaptive::Governor governor;
+static const vector<string> PERFORMANCE_PROFILES = {"Manual", "Battery Saver", "Balanced", "Performance", "Low Latency"};
 // Advanced options: hidden by default, leaving what a console's own emulator offers.
 static bool showAdvanced = false;  // default: hidden (also after Reset all settings)
 static const vector<string> ADVANCED_SETTINGS = {"Scale", "Overscan", "Signal", "Curvature", "Corner radius", "Corner softness", "Vignette", "Vignette size",
     "Brightness boost", "Stats", "Run-ahead", "Frame delay (60 Hz)", "Audio buffer", "Display", "Fast-forward speed", "Dim game in menu", "Audio filter", "Turbo speed"};
 static const vector<string> ADVANCED_MENU = {"Run-ahead", "Stats", "Scale", "Overscan", "Signal", "Curvature", "Corner radius", "Corner softness", "Vignette",
     "Vignette size", "Brightness boost", "Settings for", "Save screenshot", "Cheats..."};
-static int cornerRadius = 1, cornerSoftness = 1, vignette = 1, vignetteSize = 0, curvature = 0, shader = 6, signalMode = 0, boost = 0;
+static int cornerRadius = 1, cornerSoftness = 1, vignette = 1, vignetteSize = 0, curvature = 0, shader = 3, signalMode = 0, boost = 2;
 // Button mapping per player (Switch A, B, X, Y, L, R -> FACE_CHOICES).
 static int faceMap[NFACE] = {0, 1, 2, 3, 4, 5}, faceMap2[NFACE] = {0, 1, 2, 3, 4, 5};
+static int analogDeadzone=0;
+static const vector<string> DEADZONES={"System default","15%","25%","35%","50%","Disabled"};
+static const vector<string> CONTROLLER_PRESETS={"Custom / current","SNES layout","Swap A/B and X/Y"};
+static void applyControllerPreset(int* map,int preset){
+  if(preset==0)return;
+  for(int i=0;i<NFACE;i++)map[i]=i;
+  if(preset==2){std::swap(map[0],map[1]);std::swap(map[2],map[3]);}
+}
+static u64 analogButtons(PadState* pad){
+  u64 b=padGetButtons(pad);
+  if(!analogDeadzone)return b;
+  b &= ~(u64)(B_SL|B_SR|B_SU|B_SD);
+  if(analogDeadzone==5)return b;
+  const int thresholds[]={0,4915,8192,11468,16384};
+  auto stick=padGetStickPos(pad,0);
+  int t=thresholds[analogDeadzone];
+  if(stick.x<=-t)b|=B_SL;
+  if(stick.x>=t)b|=B_SR;
+  if(stick.y<=-t)b|=B_SD;
+  if(stick.y>=t)b|=B_SU;
+  return b;
+}
 static int remapPlayer = 0;  // Settings: whose buttons the mapping rows edit (not saved)
 static int* curMap() { return remapPlayer ? faceMap2 : faceMap; }
 static int turboRate = 1, volumeLevel = 10, audioFilter = 0;
@@ -124,6 +172,74 @@ static vector<string> recentGames, favourites;
 struct Rom { string name, dir; };  // file name (.sfc, .smc or .zip) and its folder
 static vector<Rom> allRoms, roms;
 static int selected = 0, top = 0, listView = 0, btnIndex = 0;
+static bool libraryGrid = false;
+static int librarySort = 0;
+static const vector<string> LIBRARY_SORTS = {"Favourites first", "Name", "Playtime", "Recently played"};
+static string restoreSelection;
+static int coverLoadsRemaining = 0;
+struct CoverEntry {string path;gfx::Image* image;int w,h;};
+static vector<CoverEntry> covers;
+static void clearCovers(){for(auto& c:covers)gfx::imageDestroy(c.image);covers.clear();}
+static CoverEntry& coverFor(const string& path){
+  for(size_t i=0;i<covers.size();++i)if(covers[i].path==path){std::rotate(covers.begin()+i,covers.begin()+i+1,covers.end());return covers.back();}
+  if(!coverLoadsRemaining){static CoverEntry pending{"",nullptr,0,0};return pending;}
+  --coverLoadsRemaining;
+  if(covers.size()>=cover_policy::cacheLimit){gfx::imageDestroy(covers.front().image);covers.erase(covers.begin());}
+  CoverEntry c{path,nullptr,0,0};c.image=gfx::imageLoadCover(path.c_str(),c.w,c.h);covers.push_back(c);return covers.back();
+}
+static cover_policy::Index coverIndex;
+static string coverDirectory(){return customCoverDir.empty()?string(DATA_DIR)+"/covers":customCoverDir;}
+static vector<string> coverFiles, coverDirs, unmatchedCovers;
+static size_t coverDirCursor=0,coverCheckCursor=0,coverRomCursor=0;
+static int coverValid=0,coverInvalid=0,coverMatched=0;
+static bool coverScanning=false,coverScanned=false,coverRootOK=false;
+static std::unordered_set<string> validCoverNames,usedCoverNames;
+static void readCoverDir(const string& rel){
+  string path=coverDirectory()+(rel.empty()?"":"/"+rel);
+  if(DIR* d=opendir(path.c_str())){
+    if(rel.empty())coverRootOK=true;
+    while(auto* e=readdir(d)){
+      string n=e->d_name;if(n.empty()||n[0]=='.')continue;
+      string child=rel.empty()?n:rel+"/"+n;struct stat st{};
+      if(stat((coverDirectory()+"/"+child).c_str(),&st)!=0)continue;
+      if(S_ISDIR(st.st_mode)){if(std::count(child.begin(),child.end(),'/')<12&&coverDirs.size()<4096)coverDirs.push_back(child);}
+      else if(S_ISREG(st.st_mode)&&cover_policy::format(n)<3&&coverFiles.size()<50000){coverFiles.push_back(child);coverIndex.add(child);}
+    }closedir(d);
+  }
+}
+static void beginCoverScan(){
+  clearCovers();coverIndex.clear();coverFiles.clear();coverDirs={""};unmatchedCovers.clear();validCoverNames.clear();usedCoverNames.clear();
+  coverDirCursor=coverCheckCursor=coverRomCursor=0;coverValid=coverInvalid=coverMatched=0;coverRootOK=false;coverScanning=true;coverScanned=false;
+}
+static void indexCovers(){beginCoverScan();}
+static void tickCoverScan(){
+  if(!coverScanning)return;
+  if(coverDirCursor<coverDirs.size()){string rel=coverDirs[coverDirCursor++];readCoverDir(rel);return;}
+  if(coverCheckCursor<coverFiles.size()){
+    const string& n=coverFiles[coverCheckCursor++];int w=0,h=0;auto im=gfx::imageLoadCover((coverDirectory()+"/"+n).c_str(),w,h);
+    if(im){++coverValid;validCoverNames.insert(n);gfx::imageDestroy(im);}else ++coverInvalid;return;
+  }
+  if(coverRomCursor<allRoms.size()){
+    for(int k=0;k<64&&coverRomCursor<allRoms.size();++k){const auto& r=allRoms[coverRomCursor++];bool matched=false;for(const auto& n:coverIndex.candidates(r.name))if(validCoverNames.count(n)){usedCoverNames.insert(n);matched=true;}if(matched)++coverMatched;}return;
+  }
+  for(const auto& n:coverFiles)if(validCoverNames.count(n)&&!usedCoverNames.count(n))unmatchedCovers.push_back(n);
+  coverScanning=false;coverScanned=true;
+}
+static CoverEntry& gameCover(const string& dir,const string& name){
+  for(const auto& n:coverIndex.candidates(name)){
+    auto& c=coverFor(coverDirectory()+"/"+n);
+    if(c.image||c.path.empty())return c;
+  }
+  // Scan sidecar names once per ROM directory during lookup; cache results until library refresh.
+  static CoverEntry missing{"missing",nullptr,0,0};
+  for(const char* ext:{".png",".jpg",".jpeg",".PNG",".JPG",".JPEG"}){
+    string p=dir+"/"+cover_policy::stem(name)+ext;struct stat st{};if(stat(p.c_str(),&st)!=0)continue;auto& c=coverFor(p);if(c.image||c.path.empty())return c;
+  }
+  return missing;
+}
+static string libraryQuery;
+static int queryLetter = 0;
+static const string QUERY_LETTERS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 static string focusArea = "list";
 static double exitArmed = 0;
 
@@ -143,7 +259,9 @@ struct Running {
 static Running* running = nullptr;
 static string mode = "browser";
 static bool quitApp = false;
-static int stateSlot = 1, turbo = 0, paletteApplied = -1;
+static int stateSlot = 1, paletteApplied = -1;
+static input_policy::Turbo turboP1, turboP2;
+static input_policy::Reconnect reconnectP1, reconnectP2;
 
 // UI state
 static double toastUntil = 0, hintUntil = 0;
@@ -161,12 +279,16 @@ static void record(const char* fmt, ...) {
 /* ---------------- Files ---------------- */
 static bool readFile(const string& path, vector<uint8_t>& out, long limit = 4 * 1024 * 1024) {
   FILE* f = fopen(path.c_str(), "rb");
+  if (!f) f = fopen((path + ".bak").c_str(), "rb");
   if (!f) return false;
-  fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+  if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return false; }
+  long n = ftell(f);
+  if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); return false; }
   if (n < 0 || n > limit) { fclose(f); return false; }
   out.resize(n);
   bool ok = n == 0 || fread(out.data(), 1, n, f) == (size_t)n;
-  fclose(f);
+  ok = fclose(f) == 0 && ok;
+  if (!ok) out.clear();
   return ok;
 }
 static bool readText(const string& path, string& out) {
@@ -183,8 +305,16 @@ static bool writeFile(const string& path, const void* data, size_t n) {
   bool ok = fwrite(data, 1, n, f) == n;
   ok = fclose(f) == 0 && ok;
   if (!ok) { remove(tmp.c_str()); return false; }
-  remove(path.c_str());
-  return rename(tmp.c_str(), path.c_str()) == 0;
+  // Never delete the previous save before the replacement is committed.
+  if (rename(tmp.c_str(), path.c_str()) == 0) return true;
+  // Some filesystems reject replacement rename. Preserve a recoverable backup.
+  const string bak = path + ".bak";
+  struct stat st;
+  if (stat(path.c_str(), &st) != 0 || stat(bak.c_str(), &st) == 0 || rename(path.c_str(), bak.c_str()) != 0) { remove(tmp.c_str()); return false; }
+  if (rename(tmp.c_str(), path.c_str()) == 0) { remove(bak.c_str()); return true; }
+  rename(bak.c_str(), path.c_str());
+  remove(tmp.c_str());
+  return false;
 }
 static bool writeText(const string& path, const string& text) { return writeFile(path, text.data(), text.size()); }
 static bool exists(const string& path) { struct stat st; return stat(path.c_str(), &st) == 0; }
@@ -257,9 +387,15 @@ static Json settingsJson(const GameVals& g) {
   j.set("volume", Json::number(g.volume)); j.set("filter", Json::number(g.filter));
   j.set("corner", Json::number(g.corner)); j.set("cornerSoft", Json::number(g.cornerSoft)); j.set("vignette", Json::number(g.vignette)); j.set("vignetteSize", Json::number(g.vignetteSize)); j.set("curvature", Json::number(g.curve)); j.set("shader", Json::number(g.shader)); j.set("signal", Json::number(g.signal)); j.set("boost", Json::number(g.boost));
   j.set("recent", strings(recentGames)); j.set("favourites", strings(favourites));
-  j.set("romDir", Json::string(romDir));
+  j.set("coverDir",Json::string(customCoverDir)); j.set("romDir", Json::string(romDir)); j.set("extraRomDirs",strings(extraRomDirs));
+  j.set("librarySort",Json::number(librarySort));
+  j.set("librarySelected",Json::string(selected>=0 && selected<(int)roms.size()?roms[selected].name:restoreSelection));
+  j.set("libraryGrid",Json::boolean(libraryGrid));j.set("libraryView",Json::number(listView));
   j.set("advanced", Json::boolean(showAdvanced));
-  j.set("runAhead", Json::number(runAhead)); j.set("frameDelay", Json::number(frameDelay)); j.set("audioBuffer", Json::number(audioBuffer));
+  j.set("screenBorder",Json::number(screenBorder));
+  j.set("uiTheme",Json::number(themeIndex));j.set("uiAccent",Json::number(accentIndex));
+  j.set("analogDeadzone",Json::number(analogDeadzone));
+  j.set("performanceProfile", Json::number(performanceProfile)); j.set("runAhead", Json::number(runAhead)); j.set("frameDelay", Json::number(frameDelay)); j.set("audioBuffer", Json::number(audioBuffer));
   j.set("display", Json::number(displayMode)); j.set("rewind", Json::boolean(rewindOn)); j.set("ffMode", Json::number(ffMode)); j.set("ffSpeed", Json::number(ffSpeed));
   j.set("autoLoad", Json::boolean(autoLoadState)); j.set("pauseMenu", Json::boolean(pauseInMenu)); j.set("dimMenu", Json::boolean(dimInMenu));
   return j;
@@ -281,8 +417,18 @@ static void applySettingsJson(const Json& v) {
   if (const Json* b = v.get("pauseMenu")) if (b->isBool()) pauseInMenu = b->b;
   if (const Json* b = v.get("dimMenu")) if (b->isBool()) dimInMenu = b->b;
   statsLevel = pick(v.get("statsLevel"), STATS_LEVELS.size(), statsLevel);
+  screenBorder=pick(v.get("screenBorder"),BORDER_NAMES.size(),screenBorder);
+  themeIndex=pick(v.get("uiTheme"),THEME_NAMES.size(),themeIndex);accentIndex=pick(v.get("uiAccent"),ACCENT_NAMES.size(),accentIndex);applyTheme();
+  if(const Json* b=v.get("libraryGrid"))if(b->isBool())libraryGrid=b->b;
+  listView=pick(v.get("libraryView"),LIST_VIEWS.size(),listView);
+  librarySort=pick(v.get("librarySort"),LIBRARY_SORTS.size(),librarySort);
+  if(const Json* r=v.get("librarySelected"))if(r->isStr())restoreSelection=r->s;
   if (const Json* b = v.get("advanced")) if (b->isBool()) showAdvanced = b->b;
-  if (const Json* r = v.get("romDir")) if (r->isStr() && !r->s.empty()) romDir = r->s;
+  if (const Json* r = v.get("romDir")) if(r->isStr()){auto p=content_policy::normalize(r->s);if(!p.empty())romDir=p;}
+  customCoverDir.clear();if(const Json* r=v.get("coverDir"))if(r->isStr()&&!r->s.empty())customCoverDir=content_policy::normalize(r->s);
+  extraRomDirs.clear();if(const Json* r=v.get("extraRomDirs"))if(r->isArr())for(const auto& x:r->a)if(x.isStr())content_policy::add(extraRomDirs,x.s);
+  analogDeadzone=pick(v.get("analogDeadzone"),DEADZONES.size(),0);
+  performanceProfile = pick(v.get("performanceProfile"), PERFORMANCE_PROFILES.size(), performanceProfile); governor.reset();
   runAhead = pick(v.get("runAhead"), RUN_AHEADS.size(), runAhead); frameDelay = pick(v.get("frameDelay"), FRAME_DELAYS.size(), frameDelay);
   audioBuffer = pick(v.get("audioBuffer"), AUDIO_BUFFERS.size(), audioBuffer); displayMode = pick(v.get("display"), DISPLAY_MODES.size(), displayMode);
   ffMode = pick(v.get("ffMode"), FF_MODES.size(), ffMode); ffSpeed = pick(v.get("ffSpeed"), FF_SPEEDS.size(), ffSpeed);
@@ -326,29 +472,34 @@ static bool naturalLess(const string& a0, const string& b0) {
   }
   return a.size() - i < b.size() - j;
 }
+static double playSeconds(const string& name);
 static void orderRoms() {
-  string cur = selected < (int)roms.size() ? roms[selected].name : "";
-  vector<Rom> list;
-  if (listView == 1) {
-    for (auto& r : allRoms) if (contains(favourites, r.name)) list.push_back(r);
-    std::sort(list.begin(), list.end(), [](const Rom& a, const Rom& b) { return naturalLess(a.name, b.name); });
-  } else if (listView == 2) {
-    for (auto& n : recentGames) for (auto& r : allRoms) if (r.name == n) { list.push_back(r); break; }
-  } else {
-    list = allRoms;
-    auto rank = [](const Rom& r) -> std::pair<int, int> {
-      if (contains(favourites, r.name)) return {0, 0};
-      int k = indexOf(recentGames, r.name);
-      return k >= 0 ? std::make_pair(1, k) : std::make_pair(2, 0);
-    };
-    std::stable_sort(list.begin(), list.end(), [&](const Rom& a, const Rom& b) {
-      auto x = rank(a), y = rank(b);
-      if (x != y) return x < y;
-      return naturalLess(a.name, b.name);
-    });
+  string cur = selected >= 0 && selected < (int)roms.size() ? roms[selected].name : restoreSelection;
+  std::unordered_set<string> fav(favourites.begin(),favourites.end());
+  std::unordered_map<string,int> recent;
+  for(size_t i=0;i<recentGames.size();++i) recent.emplace(recentGames[i],(int)i);
+  struct Ranked { Rom rom; int fav, recent; double seconds; };
+  vector<Ranked> list;
+  list.reserve(allRoms.size());
+  for(const auto& r:allRoms){
+    bool f=fav.count(r.name)!=0;
+    auto it=recent.find(r.name);
+    int rank=it==recent.end()?1000000:it->second;
+    if((listView==1&&!f)||(listView==2&&it==recent.end())||!library::matches(stripNes(r.name),libraryQuery))continue;
+    list.push_back({r,f?0:1,rank,librarySort==2?playSeconds(r.name):0.0});
   }
-  roms = list; selected = 0; top = 0;
-  if (!cur.empty()) for (size_t i = 0; i < roms.size(); i++) if (roms[i].name == cur) selected = (int)i;
+  std::stable_sort(list.begin(),list.end(),[](const Ranked& a,const Ranked& b){
+    if(librarySort==2&&a.seconds!=b.seconds)return a.seconds>b.seconds;
+    if((librarySort==3||(librarySort==0&&listView==2))&&a.recent!=b.recent)return a.recent<b.recent;
+    if(librarySort==0&&listView==0){
+      if(a.fav!=b.fav)return a.fav<b.fav;
+      if(a.fav!=0&&a.recent!=b.recent)return a.recent<b.recent;
+    }
+    return naturalLess(a.rom.name,b.rom.name);
+  });
+  roms.clear();roms.reserve(list.size());selected=0;top=0;
+  for(auto& r:list){if(r.rom.name==cur)selected=(int)roms.size();roms.push_back(std::move(r.rom));}
+  restoreSelection.clear();
 }
 // Time played per game (seconds, by file name) in playtime.json: counted while
 // a game runs (also behind an unpaused menu), saved every 5 minutes, when a
@@ -364,7 +515,8 @@ static double playSeconds(const string& name) { const Json* v = playtime.get(nam
 static string playLabel(const string& name) {
   double sec = playSeconds(name);
   if (sec <= 0) return "";
-  if (sec < 3600) return "< 1 hour";
+  if (sec < 60) return "< 1 min";
+  if (sec < 3600) return std::to_string((int)(sec/60)) + " min";
   int h = (int)(sec / 3600);
   return h == 1 ? "1 hour" : std::to_string(h) + " hours";
 }
@@ -375,9 +527,13 @@ static void flushPlaytime(const string& name) {
   if (!writeText(PLAYTIME(), playtime.dump())) record("Play time save failed");
 }
 static void scan() {
+  clearCovers();
+  indexCovers();
   allRoms.clear();
   // One entry per game name (a .nes file wins over a .zip of the same name).
-  for (const string& dir : {romDir}) {
+  vector<string> dirs{content_policy::normalize(romDir)};for(const auto& p:extraRomDirs)content_policy::add(dirs,p);
+  std::unordered_set<string> seen;
+  for (const string& dir : dirs) {
     vector<Rom> found;
     if (DIR* d = opendir(dir.c_str())) {
       while (struct dirent* e = readdir(d)) {
@@ -388,11 +544,7 @@ static void scan() {
       closedir(d);
     }
     std::sort(found.begin(), found.end(), [](const Rom& a, const Rom& b) { return isRomExt(a.name) && !isRomExt(b.name); });
-    for (auto& r : found) {
-      bool dup = false;
-      for (auto& o : allRoms) if (lower(stripNes(o.name)) == lower(stripNes(r.name))) dup = true;
-      if (!dup) allRoms.push_back(r);
-    }
+    for (auto& r : found) if (seen.insert(lower(stripNes(r.name))).second) allRoms.push_back(r);
   }
   orderRoms();
   if (selected >= (int)roms.size()) selected = std::max(0, (int)roms.size() - 1);
@@ -418,6 +570,13 @@ static string crtKey;
 static void fitPicture() {
   int vw = gfx::SCREEN_W, vh = gfx::SCREEN_H;
   int lw = logW(), lh = logH(), kx = W / lw, ky = H / lh;
+  // Fullscreen is independent of saved integer scaling and overscan settings.
+  if (aspectMode == 4) {
+    picX = picY = picCX = picCY = 0;
+    picW = vw; picH = vh; picCW = W; picCH = H;
+    picSX = (double)vw / lw; picSY = (double)vh / lh;
+    return;
+  }
   int cx = cropMode >= 1 ? 8 : 0, cy = cropMode >= 2 ? 8 : 0, cw = lw - 2 * cx, ch = lh - 2 * cy;
   double par = aspectMode == 1 ? 8.0 / 7.0 : aspectMode == 2 ? (4.0 / 3.0) * ch / cw : 1, sx, sy;
   if (scaleMode == 0 && vh >= ch && vw >= cw) {
@@ -449,8 +608,8 @@ static void applyCrt() {
     float dec[4] = {0.0f, 1.0f, 0.0f, 1.0f};  // NTSC decode: no hue shift, normal saturation
     gfx::pictureSetSignal(picture, signalMode, dec, 1.0f);
   }
-  gfx::pictureSetEffects(picture, picH * CORNER_RADIUS_FRAC[cornerRadius], std::max(1.0f, picH * CORNER_SOFT_FRAC[cornerSoftness]),
-                         VIGNETTE_STRENGTH[vignette], VIGNETTE_START[vignetteSize], CURVATURE[curvature]);
+  gfx::pictureSetEffects(picture, aspectMode == 4 ? 0.0f : picH * CORNER_RADIUS_FRAC[cornerRadius], std::max(1.0f, picH * CORNER_SOFT_FRAC[cornerSoftness]),
+                         VIGNETTE_STRENGTH[vignette], VIGNETTE_START[vignetteSize], aspectMode == 4 ? 0.0f : CURVATURE[curvature]);
   char key[200];
   snprintf(key, sizeof key, "%d,%d,%d,%.6f,%.6f,%d,%d", crtStyle, picW, picH, picSX, picSY, picCX, picCY);
   if (crtKey == key) return;
@@ -462,6 +621,7 @@ static void applyCrt() {
 }
 static void refreshPicture() { if (running && picture) { applyEmuOptions(); showFrame(); applyCrt(); } }
 static string scaleLabel(int i) {
+  if (aspectMode == 4) return SCALES[i] + " (override)";
   if (i == 0 && scaleMode == 0 && picSX == (int)picSX && picSY == (int)picSY && picSX > 0) return SCALES[0] + " " + std::to_string((int)picSX) + "x" + std::to_string((int)picSY);
   return SCALES[i];
 }
@@ -484,7 +644,7 @@ static void videoFps(double& avg, double& low) {
   for (int i = 1; i < n; i++) gaps.push_back(shownTimes[(shownHead - n + i + L) % L] - shownTimes[(shownHead - n + i - 1 + L) % L]);
   std::partial_sort(gaps.begin(), gaps.begin() + k, gaps.end(), std::greater<double>());
   double worst = 0; for (int i = 0; i < k; i++) worst += gaps[i];
-  avg = (n - 1) * 1000 / (last - first); low = 1000 / (worst / k);
+  if (last > first && worst > 0) { avg = (n - 1) * 1000 / (last - first); low = 1000 / (worst / k); }
 }
 // Frame-time graph: 240 frames, 2 px each, scrolling left; 16.7 ms in the middle.
 enum { GRAPH_STEP = 2, GRAPH_FRAMES = 240, GRAPH_W = GRAPH_STEP * GRAPH_FRAMES, GRAPH_H = 40 };
@@ -517,6 +677,9 @@ static double swapAcc = 0, waitAcc = 0, swapMax = 0;
 static int swapN = 0;
 static double lastSwap = 0, tickMs = 1000.0 / 60, audioRatio = 1, pendEma = 2, statsAt = 0, workMs = 0, startedAt = 0;
 static int emuCount = 0, ratioTicks = 0;
+static FILE* benchmarkFile = nullptr;
+static audio_policy::Recovery audioRecovery;
+static unsigned long long starvationRefills = 0, droppedBase = 0;
 static string statsText;
 static bool comboLatch = false, frameDrawn = false;
 
@@ -559,11 +722,21 @@ static uint32_t hashSram() {
   return h;
 }
 static void writeSram(uint32_t h) {
-  if (writeFile(running->base + ".srm", C->sram(), C->sram_size())) running->sramHash = h;
+  if (!C->sram() || C->sram_size() <= 0 || C->sram_size() > 65536) { record("Invalid SRAM buffer"); return; }
+  const string path=running->base+".srm";
+  if(h==running->sramHash){struct stat st;if(stat(path.c_str(),&st)==0 && st.st_size==C->sram_size())return;}
+  vector<uint8_t> old;
+  struct stat st;
+  if(stat(path.c_str(),&st)==0||stat((path+".bak").c_str(),&st)==0){
+    if(!readFile(path,old,65536)||old.empty()||!writeFile(path+".previous",old.data(),old.size())){
+      record("SRAM backup failed");showToast("SRAM backup failed; existing save kept");return;
+    }
+  }
+  if (writeFile(path, C->sram(), C->sram_size())) running->sramHash = h;
   else { record("SRAM save failed"); showToast("Could not save game data"); }
 }
 static void saveSram(bool force) {
-  if (!running || !running->battery) return;
+  if (!running || !running->battery || !C->sram() || C->sram_size() <= 0 || C->sram_size() > 65536) return;
   uint32_t h = hashSram();
   if (!force && h == running->sramHash) return;
   writeSram(h);
@@ -571,32 +744,45 @@ static void saveSram(bool force) {
 // Save states: <game>.state (slot 1), <game>.state2..4.
 static string statePath(int n) { return running->base + C->stateTag + (n == 1 ? ".state" : ".state" + std::to_string(n)); }
 static string slotsPath() { return running->base + C->stateTag + ".slots.json"; }
-static double slotTime(int n) { const Json* t = running ? running->slots.get(std::to_string(n)) : nullptr; return t && t->isNum() ? t->n : 0; }
+static double slotTime(int n) { if(!running)return 0;struct stat st;if(stat(statePath(n).c_str(),&st)!=0&&stat((statePath(n)+".bak").c_str(),&st)!=0)return 0;const Json* t=running->slots.get(std::to_string(n));return t&&t->isNum()?t->n:(double)st.st_mtime*1000; }
 static string slotLabel(int n) {
   double t = slotTime(n);
   if (!t) return std::to_string(n) + "  (empty)";
-  time_t s = (time_t)(t / 1000), nowT = time(nullptr);
-  struct tm d = *localtime(&s), today = *localtime(&nowT);
+  time_t s = (time_t)(t / 1000);
+  struct tm* dt=localtime(&s);if(!dt)return std::to_string(n)+"  (saved)";
+  struct tm d=*dt;
   char buf[40];
-  if (d.tm_year == today.tm_year && d.tm_yday == today.tm_yday) snprintf(buf, sizeof buf, "%02d:%02d", d.tm_hour, d.tm_min);
-  else snprintf(buf, sizeof buf, "%02d/%02d %02d:%02d", d.tm_mday, d.tm_mon + 1, d.tm_hour, d.tm_min);
+  snprintf(buf,sizeof buf,"%04d-%02d-%02d %02d:%02d",d.tm_year+1900,d.tm_mon+1,d.tm_mday,d.tm_hour,d.tm_min);
   return std::to_string(n) + "  " + buf;
 }
 static void saveState() {
   long len = C->state_save();
-  if (!len) { showToast("State save failed: Emulator could not create a save state."); return; }
-  if (!writeFile(statePath(stateSlot), C->state_buffer(len), len)) { showToast("State save failed"); return; }
+  if (!save_policy::valid(len) || !C->state_buffer(len)) { showToast("State save failed: Emulator could not create a save state."); return; }
+  const string path=statePath(stateSlot);
+  vector<uint8_t> old;
+  struct stat existing;
+  bool exists=stat(path.c_str(),&existing)==0||stat((path+".bak").c_str(),&existing)==0;
+  if(exists&&(!readFile(path,old,save_policy::fileLimit)||old.empty()||!writeFile(path+".previous",old.data(),old.size()))){showToast("Backup failed; save unchanged");return;}
+  auto packed=save_policy::pack(C->state_buffer(len),len);
+  if (packed.empty() || !writeFile(path, packed.data(), packed.size())) { showToast("State save failed"); return; }
   running->slots.set(std::to_string(stateSlot), Json::number((double)time(nullptr) * 1000));
-  writeText(slotsPath(), running->slots.dump());
+  running->slots.set("hash"+std::to_string(stateSlot),Json::number(save_policy::checksum(C->state_buffer(len),len)));
+  if(!writeText(slotsPath(), running->slots.dump())){showToast("State saved; metadata write failed");return;}
   showToast("Saved to slot " + std::to_string(stateSlot));
 }
-static void loadState(bool quietIfNone, int n) {
+static void loadState(bool quietIfNone, int n, bool previous=false) {
   vector<uint8_t> d;
-  if (!readFile(statePath(n), d, 1024 * 1024)) { if (!quietIfNone) showToast("Slot " + std::to_string(n) + " is empty"); return; }
-  char* buf = C->state_buffer((long)d.size());
-  if (!buf) { showToast("State load failed"); return; }
-  memcpy(buf, d.data(), d.size());
-  if (!C->state_load((long)d.size())) { showToast("State load failed"); return; }
+  if (!readFile(statePath(n)+(previous?".previous":""), d, save_policy::fileLimit)) { if (!quietIfNone) showToast("Slot " + std::to_string(n) + " is empty"); return; }
+  size_t offset=0;auto format=save_policy::inspect(d,offset);
+  if(format==save_policy::Format::invalid){showToast("State checksum or size invalid; try previous save");return;}
+  const Json* hash=running->slots.get("hash"+std::to_string(n));
+  if(format==save_policy::Format::legacy&&!previous&&hash&&hash->isNum()&&hash->n!=(double)save_policy::checksum(d.data(),d.size())){showToast("Legacy state checksum mismatch; try previous save");return;}
+  long length=long(d.size()-offset);
+  char* buf=C->state_buffer(length);
+  if(!buf){showToast("State load failed");return;}
+  memcpy(buf,d.data()+offset,length);
+  if(!C->state_load(length)){showToast("State load failed");return;}
+  resetRewind();
   C->audio_reset();
   showToast("Loaded slot " + std::to_string(n));
 }
@@ -670,20 +856,22 @@ static void quitGame();
 // Reads a .sfc/.smc file, or the first one inside a .zip.
 static bool readRom(const Rom& rom, vector<uint8_t>& data, string& err) {
   string path = rom.dir + "/" + rom.name;
-  if (!hasExt(rom.name, ".zip")) { if (!readFile(path, data)) { err = "The file could not be read."; return false; } return true; }
+  if (!hasExt(rom.name, ".zip")) { if (!readFile(path, data, rom_patch::limit)) { err = "The file could not be read."; return false; } return true; }
   unzFile z = unzOpen(path.c_str());
   if (!z) { err = "This zip file could not be opened. It may be damaged."; return false; }
   bool found = false;
   for (int r = unzGoToFirstFile(z); r == UNZ_OK; r = unzGoToNextFile(z)) {
     char name[512]; unz_file_info info;
     if (unzGetCurrentFileInfo(z, &info, name, sizeof name, NULL, 0, NULL, 0) != UNZ_OK) continue;
-    if (!isRomExt(name)) continue;
-    if (info.uncompressed_size > 8 * 1024 * 1024) { err = "The game inside this zip is too large."; unzClose(z); return false; }
+    name[sizeof(name)-1]=0;
+    if (info.size_filename >= sizeof(name) || !isRomExt(name)) continue;
+    if (info.uncompressed_size > rom_patch::limit) { err = "The game inside this zip is too large."; unzClose(z); return false; }
     data.resize(info.uncompressed_size);
     if (unzOpenCurrentFile(z) != UNZ_OK) break;
-    int got = data.empty() ? 0 : unzReadCurrentFile(z, data.data(), (unsigned)data.size());
-    unzCloseCurrentFile(z);
-    found = got == (int)data.size();
+    size_t got=0;bool ok=true;
+    while(got<data.size()){int n=unzReadCurrentFile(z,data.data()+got,(unsigned)std::min<size_t>(65536,data.size()-got));if(n<=0){ok=false;break;}got+=(size_t)n;}
+    int crc=unzCloseCurrentFile(z);
+    found=ok&&got==data.size()&&crc==UNZ_OK;
     if (!found) { err = "The game inside this zip could not be unpacked. The zip may be damaged."; unzClose(z); return false; }
     break;
   }
@@ -691,24 +879,56 @@ static bool readRom(const Rom& rom, vector<uint8_t>& data, string& err) {
   if (!found) { err = "This zip file has no SNES game (.sfc or .smc) inside."; return false; }
   return true;
 }
-static void startGame(const Rom& rom) {
+static void startGame(const Rom& rom, bool resume=false) {
   vector<uint8_t> data;
   string readErr;
   if (!readRom(rom, data, readErr)) { showMessage(readErr, [] { mode = "browser"; }); return; }
+  string patchSuffix;
+  for(const char* ext:{".ips",".bps",".ups"}){
+    string path=rom.dir+"/"+stripNes(rom.name)+ext;struct stat st;
+    if(stat(path.c_str(),&st)!=0)continue;
+    if(!patchSuffix.empty()){showMessage("Multiple ROM patches found; keep only one.", [] {mode="browser";});return;}
+    vector<uint8_t> patch;
+    if(!readFile(path,patch,rom_patch::limit)){showMessage("Cannot read ROM patch.", [] {mode="browser";});return;}
+    bool ok=string(ext)==".ips"?rom_patch::ips(data,patch):string(ext)==".bps"?rom_patch::bps(data,patch):rom_patch::ups(data,patch);
+    if(!ok){showMessage("Invalid or incompatible ROM patch; original unchanged.", [] {mode="browser";});return;}
+    patchSuffix=string(ext)+"-"+std::to_string(rom_patch::identity(patch));
+    record("Applied ROM patch: %s",path.c_str());
+  }
   if (string bad = romCheck(data); !bad.empty()) { record("ROM check %s: %s", rom.name.c_str(), bad.c_str()); showMessage(bad, [] { mode = "browser"; }); return; }
   uint8_t* p = C->rom_alloc((long)data.size());
   if (!p) { showMessage("Not enough memory to load this game.", [] { mode = "browser"; }); return; }
   memcpy(p, data.data(), data.size());
-  core_rom_name = rom.name.c_str();
+  const string fullRomPath=rom.dir+"/"+rom.name;
+  core_rom_name = fullRomPath.c_str();
   if (const char* err = C->load()) {
+    core_rom_name = "";
     C->unload();
     showMessage(err, [] { mode = "browser"; });
     return;
   }
+  core_rom_name = "";
+  gameRate=timing_policy::rate(C->is_pal()!=0);
+  record("Enhancement chips: %s", C->chips());
   running = new Running();
   running->name = rom.name;
-  running->base = string(DATA_DIR) + "/" + sanitize(rom.name);
+  running->base = string(DATA_DIR) + "/" + sanitize(rom.name) + patchSuffix;
   running->battery = C->has_battery() != 0;
+  // Import only missing files for unpatched games; never overwrite local saves.
+  if(patchSuffix.empty()){
+    const string legacy="sdmc:/switch/sw2snes/"+sanitize(rom.name);
+    auto importMissing=[&](const string& suffix,bool state){
+      const string dst=running->base+suffix;struct stat st;
+      if(stat(dst.c_str(),&st)==0||stat((dst+".bak").c_str(),&st)==0||stat((dst+".previous").c_str(),&st)==0)return;
+      vector<uint8_t> bytes;
+      if(!readFile(legacy+suffix,bytes,state?save_policy::fileLimit:65536)||bytes.empty())return;
+      if(state){size_t offset=0;if(save_policy::inspect(bytes,offset)==save_policy::Format::invalid)return;}
+      else if(bytes.size()>(size_t)C->sram_size())return;
+      if(writeFile(dst,bytes.data(),bytes.size()))record("Imported legacy save: %s",suffix.c_str());
+    };
+    if(running->battery)importMissing(".srm",false);
+    for(int n=1;n<=4;++n)importMissing(string(C->stateTag)+(n==1?".state":".state"+std::to_string(n)),true);
+  }
   if (running->battery) {
     vector<uint8_t> s;
     if (readFile(running->base + ".srm", s, 65536)) {
@@ -723,7 +943,7 @@ static void startGame(const Rom& rom) {
   record("Core %s, battery %d (%d bytes)", C->name, running->battery ? 1 : 0, C->sram_size());
   string t; Json j;
   if (readText(slotsPath(), t) && Json::parse(t, j) && j.type == Json::OBJ) running->slots = j;
-  stateSlot = autoLoadState ? newestSlot() : 1;
+  stateSlot = (autoLoadState || resume) ? newestSlot() : 1;
   running->globalVals = gameValues(); running->perGame = false;
   if (readText(running->base + ".settings.json", t) && Json::parse(t, j) && j.type == Json::OBJ) { setGameValuesJson(j); running->perGame = true; }
   recentGames.erase(std::remove(recentGames.begin(), recentGames.end(), rom.name), recentGames.end());
@@ -735,20 +955,29 @@ static void startGame(const Rom& rom) {
   if (applyCheats()) showToast("Cheats active");
   fitPicture(); crtKey.clear(); applyCrt();
   hintUntil = nowMs() + 6000;
-  if (autoLoadState) loadState(true, newestSlot());
+  if (autoLoadState || resume) loadState(true, stateSlot);
   resetClock(); mode = "running"; comboLatch = true;
   resetRewind(); emuAcc = 0; ffLatched = false; fastForward = false;
-  setAudioRatio(1); audioInteg = 0; pendEma = AUDIO_TARGET_FRAMES[audioBuffer];
-  audio::prefill(AUDIO_TARGET_FRAMES[audioBuffer]); ratioTicks = 0; emuCount = 0; workMs = 0; statsAt = nowMs(); startedAt = statsAt;
+  audioRecovery.reset(); setAudioRatio(1); audioInteg = 0; pendEma = AUDIO_TARGET_FRAMES[audioBuffer];
+  audio::prefill(AUDIO_TARGET_FRAMES[audioBuffer]); ratioTicks = 0; emuCount = 0; workMs = 0; statsAt = nowMs(); startedAt = statsAt; governor.reset(); turboP1.reset(); turboP2.reset();
   frameDrawn = false; statsText.clear(); sessionLog = 0;
+  starvationRefills = 0; droppedBase = audio::droppedBuffers();
+  for (double& x : phase) x = 0; phaseN = 0;
+  string benchDir=string(DATA_DIR)+"/benchmarks";mkdir(benchDir.c_str(),0777);
+  string benchBase=benchDir+"/"+sanitize(rom.name)+"-"+std::to_string((long long)time(nullptr));
+  for(int i=0;i<100&&!benchmarkFile;i++){string p=benchBase+"-"+std::to_string(i)+".csv";struct stat st;if(stat(p.c_str(),&st)!=0){benchmarkFile=fopen(p.c_str(),"w");break;}}
+  if (benchmarkFile) fputs("elapsed_s,emu_fps,video_fps,low_1pct_fps,speed_pct_region_reference,emu_ms,draw_ms,gpu_ms,audio_queue_ms,starvation_refills,dropped_buffers,rewind_bytes,rewind_states,fast_forward,rewinding,target_fps\n", benchmarkFile);
   running->sramCheck = nowMs();
   playSavedAt = nowMs(); playAccumSec = 0;
   record("Started %s", rom.name.c_str());
 }
 static void quitGame() {
   if (!running) return;
+  if (benchmarkFile) { fclose(benchmarkFile); benchmarkFile = nullptr; }
   flushPlaytime(running->name);
   saveSram(true);
+  resetRewind();
+  C->audio_reset();
   C->unload();
   if (running->perGame) setGameValues(running->globalVals);
   delete running; running = nullptr;
@@ -758,12 +987,13 @@ static void quitGame() {
 
 /* ---------------- Input ---------------- */
 static int snesPad(u64 b, const int* map = faceMap) {
+  auto& pulse = map == faceMap2 ? turboP2 : turboP1;
   int p = 0;
-  bool turboOn = (turbo % TURBO_PERIOD[turboRate]) * 2 < TURBO_PERIOD[turboRate];
-  for (int f = 0; f < NFACE; f++) if (b & FACE_BITS[f]) {
-    int t = map[f];
-    if (t < 6) p |= FACE_TARGETS[t];
-    else if (t < 10 && turboOn) p |= FACE_TARGETS[t - 6];
+  for (int f = 0; f < NFACE; f++) {
+    int t = map[f]; bool held = (b & FACE_BITS[f]) != 0;
+    bool turboOn = pulse.step(f, held && t >= 6 && t < 10, TURBO_PERIOD[turboRate]);
+    if (held && t >= 0 && t < 6) p |= FACE_TARGETS[t];
+    else if (held && t >= 6 && t < 10 && turboOn) p |= FACE_TARGETS[t - 6];
   }
   if (b & B_PLUS) p |= S_START;
   if (b & B_MINUS) p |= S_SELECT;
@@ -771,8 +1001,8 @@ static int snesPad(u64 b, const int* map = faceMap) {
   if (b & (B_DOWN | B_SD)) p |= S_DOWN;
   if (b & (B_LEFT | B_SL)) p |= S_LEFT;
   if (b & (B_RIGHT | B_SR)) p |= S_RIGHT;
-  if ((p & (S_UP | S_DOWN)) == (S_UP | S_DOWN)) p &= ~(S_UP | S_DOWN);
-  if ((p & (S_LEFT | S_RIGHT)) == (S_LEFT | S_RIGHT)) p &= ~(S_LEFT | S_RIGHT);
+  p = input_policy::clearOpposites(p,S_UP,S_DOWN);
+  p = input_policy::clearOpposites(p,S_LEFT,S_RIGHT);
   return p;
 }
 // In-game menu: ZL + ZR (L and R are SNES buttons), as on Nintendo's own SNES app.
@@ -780,15 +1010,16 @@ static const u64 MENU_COMBO = HidNpadButton_ZL | HidNpadButton_ZR;
 static u64 lastBits = 0;
 static int heldDirs = 0;
 static double repeatAt = 0;
-struct Nav { u64 pressed; bool up, down; };
+struct Nav { u64 pressed; bool up, down, left, right; };
 static Nav navEvents(u64 bits) {
   Nav ev; ev.pressed = bits & ~lastBits;
   double t = nowMs(); int out = 0;
   int dirs = (bits & (B_UP | B_SU) ? 1 : 0) | (bits & (B_DOWN | B_SD) ? 2 : 0);
+  if (mode == "browser" && libraryGrid) dirs |= (bits & (B_LEFT | B_SL) ? 4 : 0) | (bits & (B_RIGHT | B_SR) ? 8 : 0);
   if (dirs != heldDirs) { heldDirs = dirs; repeatAt = t + 380; out |= dirs; }
   else if (dirs && t >= repeatAt) { repeatAt = t + 110; out |= dirs; }
   lastBits = bits;
-  ev.up = out & 1; ev.down = out & 2;
+  ev.up = out & 1; ev.down = out & 2; ev.left = out & 4; ev.right = out & 8;
   return ev;
 }
 
@@ -841,9 +1072,11 @@ static void openMenu() {
       act("Resume", [] { closeMenu(); }),
       act("Save state", [] { saveState(); closeMenu(); }),
       act("Load state", [] { closeMenu(); loadState(false, stateSlot); }),
+      act("Load previous backup", [] { closeMenu(); loadState(false,stateSlot,true); }),
       opt("Slot", [] { vector<string> a; for (int n = 1; n <= SLOT_COUNT; n++) a.push_back(slotLabel(n)); return a; },
           [] { return stateSlot - 1; }, [](int v) { stateSlot = v + 1; }),
       act("Reset", [] { C->reset(0); closeMenu(); showToast("Reset"); }),
+      opt("Performance profile", [] { return PERFORMANCE_PROFILES; }, [] { return performanceProfile; }, [](int v) { performanceProfile = v; governor.reset(); }, saveSettings),
       opt("Run-ahead", [] { return RUN_AHEADS; }, [] { return runAhead; }, [](int v) { runAhead = v; }, saveSettings),
       opt("Stats", [] { return STATS_LEVELS; }, [] { return statsLevel; }, [](int v) { statsLevel = v; }, [] { resetGraph(); saveSettings(); }),
       opt("Aspect", [] { return ASPECTS; }, [] { return aspectMode; }, [](int v) { aspectMode = v; }, pictureChanged),
@@ -924,7 +1157,7 @@ static void pickLoad(const string& path) {
       string n = e->d_name;
       if (n.empty() || n[0] == '.') continue;
       if (e->d_type == DT_DIR) pickDirs.push_back(n);
-      else if (isRomExt(n) || hasExt(n, ".zip")) pickGames++;
+      else if (pickingCoverFolder?cover_policy::format(n)<3:(isRomExt(n) || hasExt(n, ".zip"))) pickGames++;
     }
     closedir(d);
   }
@@ -933,7 +1166,8 @@ static void pickLoad(const string& path) {
 static bool pickAtRoot() { return pickPath == "sdmc:/" || pickPath == "sdmc:"; }
 // Rows: "Use this folder", then ".." (unless at the root), then subfolders.
 static int pickRows() { return 1 + (pickAtRoot() ? 0 : 1) + (int)pickDirs.size(); }
-static void openFolderPicker() {
+static void openFolderPicker(bool add=false) {
+  pickingCoverFolder=false;addingRomFolder=add;
   struct stat st;
   pickLoad(stat(romDir.c_str(), &st) == 0 ? romDir : "sdmc:/");
   mode = "folders";
@@ -944,6 +1178,8 @@ struct SettingItem { string label; std::function<vector<string>()> choices; std:
 static vector<SettingItem> settingsItems() {
   return {
       {"ROM folder", [] { return vector<string>{romDir.rfind("sdmc:", 0) == 0 ? romDir.substr(5) : romDir}; }, [] { return 0; }, [](int) { openFolderPicker(); }},
+      {"Add ROM folder", [] {return vector<string>{std::to_string(extraRomDirs.size())+" extra"};}, [] {return 0;}, [](int){openFolderPicker(true);}},
+      {"Clear extra ROM folders", [] {return vector<string>{"Clear list"};}, [] {return 0;}, [](int){extraRomDirs.clear();saveSettings();scan();showToast("Extra folder list cleared; files unchanged");}},
       {"Aspect", [] { return ASPECTS; }, [] { return aspectMode; }, [](int v) { aspectMode = v; }},
       {"Scale", [] { return SCALES; }, [] { return scaleMode; }, [](int v) { scaleMode = v; }},
       {"Overscan", [] { return CROPS; }, [] { return cropMode; }, [](int v) { cropMode = v; }},
@@ -956,6 +1192,7 @@ static vector<SettingItem> settingsItems() {
       {"Vignette", [] { return VIGNETTES; }, [] { return vignette; }, [](int v) { vignette = v; }},
       {"Vignette size", [] { return VIGNETTE_SIZES; }, [] { return vignetteSize; }, [](int v) { vignetteSize = v; }},
       {"Stats", [] { return STATS_LEVELS; }, [] { return statsLevel; }, [](int v) { statsLevel = v; }},
+      {"Performance profile", [] { return PERFORMANCE_PROFILES; }, [] { return performanceProfile; }, [](int v) { performanceProfile = v; governor.reset(); }},
       {"Run-ahead", [] { return RUN_AHEADS; }, [] { return runAhead; }, [](int v) { runAhead = v; }},
       {"Frame delay (60 Hz)", [] { return FRAME_DELAYS; }, [] { return frameDelay; }, [](int v) { frameDelay = v; }},
       {"Audio buffer", [] { return AUDIO_BUFFERS; }, [] { return audioBuffer; }, [](int v) { audioBuffer = v; }},
@@ -970,6 +1207,8 @@ static vector<SettingItem> settingsItems() {
       {"Audio filter", [] { return FILTERS; }, [] { return audioFilter; }, [](int v) { audioFilter = v; }},
       {"Turbo speed", [] { return TURBO_RATES; }, [] { return turboRate; }, [](int v) { turboRate = v; }},
       {"Button mapping for", [] { return vector<string>{"Player 1", "Player 2"}; }, [] { return remapPlayer; }, [](int v) { remapPlayer = v; }},
+      {"Controller preset", [] {return CONTROLLER_PRESETS;}, [] {return 0;}, [](int v){applyControllerPreset(curMap(),v);}},
+      {"Analog deadzone", [] {return DEADZONES;}, [] {return analogDeadzone;}, [](int v){analogDeadzone=v;}},
       {"Switch A button", [] { return FACE_CHOICES; }, [] { return curMap()[0]; }, [](int v) { curMap()[0] = v; }},
       {"Switch B button", [] { return FACE_CHOICES; }, [] { return curMap()[1]; }, [](int v) { curMap()[1] = v; }},
       {"Switch X button", [] { return FACE_CHOICES; }, [] { return curMap()[2]; }, [](int v) { curMap()[2] = v; }},
@@ -984,6 +1223,11 @@ static void rebuildSettings() {
   SETTINGS_ITEMS.clear();
   SETTINGS_ITEMS.push_back({"Advanced options", [] { return vector<string>{"Hidden", "Shown"}; }, [] { return showAdvanced ? 1 : 0; },
                             [](int v) { showAdvanced = v != 0; rebuildSettings(); }});
+  SETTINGS_ITEMS.push_back({"Resume last game", [] {return vector<string>{"Press A"};}, [] {return 0;}, [](int){if(!recentGames.empty())for(const auto& r:allRoms)if(r.name==recentGames.front()){Rom copy=r;startGame(copy,true);return;}showToast("No recent game available");}});
+  SETTINGS_ITEMS.push_back({"Library sort", [] {return LIBRARY_SORTS;}, [] {return librarySort;}, [](int v){librarySort=v;orderRoms();}});
+  SETTINGS_ITEMS.push_back({"Screen border", [] {return BORDER_NAMES;}, [] {return screenBorder;}, [](int v){screenBorder=v;}});
+  SETTINGS_ITEMS.push_back({"UI theme", [] {return THEME_NAMES;}, [] {return themeIndex;}, [](int v){themeIndex=v;applyTheme();saveSettings();}});
+  SETTINGS_ITEMS.push_back({"Accent colour", [] {return ACCENT_NAMES;}, [] {return accentIndex;}, [](int v){accentIndex=v;applyTheme();saveSettings();}});
   for (auto& it : settingsItems())
     if (showAdvanced || !contains(ADVANCED_SETTINGS, it.label)) SETTINGS_ITEMS.push_back(it);
   if (showAdvanced)
@@ -1046,46 +1290,141 @@ static void scrollbar(float x, float y, float h, int total, int vis, int topInde
 /* ---------------- Screens ---------------- */
 static const vector<string> BROWSER_BUTTONS = {"Settings", "Refresh", "Exit"};
 static const char* BROWSER_KEYS[] = {"Y", "X", "B"};  // gamepad shortcut for each button
-static const int ROW_H = 40;
+static const int ROW_H = 43;
 static const float LIST_HEAD = 26;  // column headings above the game list
-static int maxRows() { return std::max(3, (int)((gfx::UI_H * 0.9 - 36 - 38 - 44 - 12 - 30 - 14 - LIST_HEAD) / ROW_H)); }
+static int maxRows() { return std::max(3, (int)((gfx::UI_H - 36 - 92 - LIST_HEAD - 12 - 40 - 18 - 6) / ROW_H)); }
 
+static u64 logoButtons=0;
+static constexpr float LIB_EXTRA=18;
+static constexpr float NAV_Y=76, GRID_TOP=118;
+static constexpr float LIST_TOP=122+26;
+static constexpr float GRID_GAP=12;
+static constexpr float SEARCH_X=530, SEARCH_Y=14, SEARCH_W=680, SEARCH_H=42, CLEAR_W=176;
+static constexpr float VIEW_X=gfx::UI_W-232;
+static bool touchHeld=true;
+static bool inside(float x,float y,float l,float t,float w,float h){return x>=l&&x<l+w&&y>=t&&y<t+h;}
+static void clearLibrarySearch(){libraryQuery.clear();orderRoms();selected=top=0;focusArea=roms.empty()?"tabs":"list";exitArmed=0;showToast("Search cleared");}
+static void libraryLogo(float x,float y,const string& note){
+  gfx::rect(x,y+5,54,30,gfx::rgb(0xd5cfe1),12);
+  auto d=gfx::rgb((logoButtons&(B_UP|B_DOWN|B_LEFT|B_RIGHT|B_SU|B_SD|B_SL|B_SR))?0x7960b8:0x484253);
+  gfx::rect(x+10,y+12,6,16,d,1);gfx::rect(x+5,y+17,16,6,d,1);
+  const uint32_t colors[]={0x73ae78,0xdc777e,0x7b8bd5,0xe2c56e};
+  const u64 keys[]={B_X,B_A,B_Y,B_B};
+  const float bx[]={37,44,30,37},by[]={9,16,16,23};
+  int pulse=int(nowMs()/420.0)%4;
+  for(int i=0;i<4;i++){
+    bool active=(logoButtons&keys[i])||pulse==i;
+    if(active)gfx::rect(x+bx[i]-2,y+by[i]-2,10,10,gfx::rgb(colors[i],0.38f),5);
+    gfx::rect(x+bx[i],y+by[i],6,6,gfx::rgb(colors[i]),3);
+  }
+  float tx=x+64;
+  float w=gfx::text("NS2xSNES",tx,y-2,26,col(C_TEXT),gfx::BOLD,0.18f);
+  float tail=gfx::text("9x",tx+w,y-2,26,col(C_ACCENT),gfx::BOLD,0.18f);
+  float stripe=(w+tail)/4;
+  const uint32_t bands[]={0x7b8bd5,0x73ae78,0xe2c56e,0xdc777e};
+  for(int i=0;i<4;i++)gfx::rect(tx+i*stripe,y+30,stripe-2,3,gfx::rgb(bands[i]),1);
+  gfx::text("SUPER 16-BIT EMULATION",tx,y+35,12,col(C_DIM));
+  if(!note.empty())gfx::text(note,gfx::UI_W-20-gfx::textWidth(note,16),46,16,col(C_DIM));
+}
+static void librarySearchBar(){
+  const float x=SEARCH_X,y=SEARCH_Y,w=SEARCH_W,h=SEARCH_H;
+  gfx::rect(x,y,w,h,col(C_BG),8,libraryQuery.empty()?1:2,col(libraryQuery.empty()?C_LINE:C_ACCENT));
+  gfx::rect(x+6,y+5,32,32,col(C_SEL),5);
+  textMid("-",x+6+(32-gfx::textWidth("-",24,gfx::BOLD))/2,y+5,32,24,col(C_TEXT),gfx::BOLD);
+  gfx::rect(x+48,y+10,16,16,col(C_BG),8,2,col(C_DIM));
+  for(int i=0;i<7;i++)gfx::rect(x+60+i,y+23+i,3,3,col(C_DIM),1);
+  string q=libraryQuery.empty()?"Search games...":libraryQuery;
+  textMid(gfx::ellipsize(q,w-88-(libraryQuery.empty()?0:CLEAR_W),24),x+78,y,h,24,col(libraryQuery.empty()?C_DIM:C_TEXT),gfx::BOLD);
+  if(!libraryQuery.empty()){
+    float cx=x+w-CLEAR_W;
+    gfx::rect(cx,y+4,CLEAR_W-4,h-8,col(C_SEL),5,1,col(C_ACCENT));
+    string label="ZL + - Clear Search";
+    textMid(label,cx+(CLEAR_W-4-gfx::textWidth(label,16,gfx::BOLD))/2,y+4,h-8,16,col(C_TEXT),gfx::BOLD);
+  }
+}
+static void libraryToolbar(bool grid){
+  float x=VIEW_X;
+  gfx::rect(x,NAV_Y,100,34,col(grid?C_BG:C_SEL),5);
+  gfx::rect(x+104,NAV_Y,108,34,col(grid?C_SEL:C_BG),5);
+  textMid("+ List",x+(100-gfx::textWidth("+ List",20))/2,NAV_Y,34,20,col(C_TEXT));
+  textMid("+ Grid",x+104+(108-gfx::textWidth("+ Grid",20))/2,NAV_Y,34,20,col(C_TEXT));
+}
+static float categoryTabs(float x,float y){
+  gfx::rect(x,y,42,34,col(C_BG),6,1,col(C_LINE));textMid("ZL",x+9,y,34,17,col(C_TEXT));x+=50;
+  for(size_t i=0;i<LIST_VIEWS.size();++i){
+    bool on=(int)i==listView;float w=gfx::textWidth(LIST_VIEWS[i],17)+32;
+    gfx::rect(x,y,w,34,col(on?C_SEL:C_BG),16,1,col(on?C_ACCENT:C_LINE));
+    textMid(LIST_VIEWS[i],x+16,y,34,17,col(on?C_TEXT:C_DIM));x+=w+8;
+  }
+  gfx::rect(x,y,42,34,col(C_BG),6,1,col(C_LINE));textMid("ZR",x+9,y,34,17,col(C_TEXT));return x+50;
+}
+static void pageLabel(float right,float y,int size){
+  string p="Page "+std::to_string(roms.empty()?0:selected/size+1)+" / "+std::to_string((roms.size()+size-1)/size);
+  float pw=gfx::textWidth(p,24,gfx::BOLD),x=right-pw-104;
+  gfx::rect(x,y,42,34,col(C_SEL),6,1,col(C_ACCENT));textMid("L",x+15,y,34,22,col(C_TEXT));
+  textMid(p,x+52,y,34,24,col(C_TEXT),gfx::BOLD);
+  gfx::rect(right-42,y,42,34,col(C_SEL),6,1,col(C_ACCENT));textMid("R",right-28,y,34,22,col(C_TEXT));
+}
+static void drawGridFooter(){
+  const char* labels[]={"Settings","Refresh","Exit"};
+  float bw=(gfx::UI_W-70)/3.0f;
+  for(int i=0;i<3;i++){float x=25+i*(bw+10);string label=i==2&&exitArmed?"Confirm exit":labels[i];gfx::rect(x,gfx::UI_H-48,bw,40,col(i==2&&exitArmed?C_SEL:C_BG),8,1,col(C_LINE));textMid(label,x+(bw-gfx::textWidth(label,22))/2,gfx::UI_H-48,40,22,col(C_TEXT));}
+}
+static void drawGridBrowser() {
+  coverLoadsRemaining=1;
+  const float x=0,y=0,w=gfx::UI_W,h=gfx::UI_H;
+  const float gap=12,tw=(w-40-3*gap)/4,th=(h-150-LIB_EXTRA-2*gap)/3,aw=tw-12,ah=th-34;
+  gfx::rect(x,y,w,h,col(C_PANEL));
+  libraryLogo(x+20,y+18,std::to_string(roms.size())+" games");
+  gfx::text("v" APP_VERSION,w-20-gfx::textWidth("v" APP_VERSION,18),y+26,18,col(C_DIM));
+  float tx=categoryTabs(20,NAV_Y);
+  libraryToolbar(true);
+  pageLabel(gfx::UI_W-250,NAV_Y,12);
+  librarySearchBar();
+  int start=library::pageTop(selected,4,3);
+  for(int i=0;i<12 && start+i<(int)roms.size();++i){
+    const Rom& r=roms[start+i];float cx=x+20+(i%4)*(tw+gap),cy=y+GRID_TOP+(i/4)*(th+gap);
+    bool active=start+i==selected;
+    gfx::rect(cx,cy,tw,th,col(active?C_SEL:C_BG),8,active?3:1,col(active?C_ACCENT:C_LINE));
+    auto& cover=gameCover(r.dir,r.name);
+    if(cover.image){auto f=cover_policy::fit(cover.w,cover.h,aw,ah);gfx::imageDraw(cover.image,cx+6+f.x,cy+4+f.y,f.w,f.h);}
+    else {gfx::rect(cx+6,cy+4,aw,ah,col(C_PANEL),6,1,col(C_LINE));gfx::text("SNES",cx+(tw-gfx::textWidth("SNES",30,gfx::BOLD))/2,cy+4+ah/2-15,30,col(C_DIM),gfx::BOLD);}
+    gfx::text(gfx::ellipsize(stripNes(r.name),aw,20),cx+6,cy+ah+8,20,col(C_TEXT));
+  }
+  if(roms.empty())gfx::text("No matching games",x+20,y+130+LIB_EXTRA,24,col(C_TEXT));
+  drawGridFooter();
+}
 static void drawBrowser() {
-  const float winW = 960, padX = 20, padY = 18, innerW = winW - 2 * padX;
+  if(libraryGrid){drawGridBrowser();return;}
+  const float winW = gfx::UI_W, padX = 20, padY = 18, innerW = winW - 2 * padX;
   int VIS = std::max(1, std::min((int)roms.size(), maxRows()));
-  if (selected < top) top = selected;
-  if (selected >= top + VIS) top = selected - VIS + 1;
-  if (top > std::max(0, (int)roms.size() - VIS)) top = std::max(0, (int)roms.size() - VIS);
+  top=roms.empty()?0:(selected/maxRows())*maxRows();
   bool scroll = (int)roms.size() > VIS;
   string empty;
   if (roms.empty()) {
-    if (listView == 1) empty = "No favourites yet.\n\nWhile playing, open the menu (ZL + ZR) and set Favourite to On.";
+    if (!libraryQuery.empty()) empty = "No matching games. Press Minus to edit search.";
+    else if (listView == 1) empty = "No favourites yet.\n\nWhile playing, open the menu (ZL + ZR) and set Favourite to On.";
     else if (listView == 2) empty = "No recently played games yet.";
-    else empty = "No games found in\n\n    " + romDir + "\n\nCopy .nes (or zipped) games there, for example over FTP with OunceShell, then choose Refresh. The folder can be changed in Settings.";
+    else empty = "No games found in\n\n    " + romDir + "\n\nCopy .sfc/.smc (or zipped) games there, for example over FTP with OunceShell, then choose Refresh. The folder can be changed in Settings.";
   }
-  float listInnerW = innerW - (scroll ? 16 : 0);
+  float listInnerW = innerW * 0.65f - (scroll ? 16 : 0);
+  coverLoadsRemaining=1;
   vector<string> emptyLines = empty.empty() ? vector<string>() : wrap(empty, listInnerW - 32, 17);
-  float listH = roms.empty() ? emptyLines.size() * 17 * 1.45f + 20 + 12 : VIS * ROW_H + 12;
+  float listH = gfx::UI_H - padY * 2 - 46 - 46 - (roms.empty() ? 0 : LIST_HEAD) - 12 - 40 - LIB_EXTRA;
   float head = roms.empty() ? 0 : LIST_HEAD;
-  float winH = padY * 2 + 34 + 12 + 36 + 10 + head + listH + 12 + 40;
-  float x = (gfx::UI_W - winW) / 2, y = roundf((gfx::UI_H - winH) / 2);
-  gfx::rect(x, y, winW, winH, col(C_PANEL), 14, 1, col(C_LINE));
+  float x = 0, y = 0;
+  gfx::rect(x, y, winW, gfx::UI_H, col(C_PANEL));
   float cx = x + padX, cy = y + padY;
-  panelHeader(cx, cy, "SW2SNES", roms.empty() ? "" : std::to_string(roms.size()) + (roms.size() == 1 ? " game" : " games"));
-  cy += 34 + 12;
-  // Tabs
-  float tx = cx;
-  for (size_t i = 0; i < LIST_VIEWS.size(); i++) {
-    bool on = (int)i == listView, focus = focusArea == "tabs" && on;
-    float w = gfx::textWidth(LIST_VIEWS[i], 17) + 32;
-    gfx::rect(tx, cy, w, 34, focus ? col(C_SEL) : on ? col(C_LINE) : Color{0, 0, 0, 0}, 16, 1, col(focus ? C_ACCENT : C_LINE));
-    textMid(LIST_VIEWS[i], tx + 16, cy, 34, 17, col(on ? C_TEXT : C_DIM));
-    tx += w + 8;
-  }
-  cy += 36 + 10;
+  libraryLogo(cx,cy,std::to_string(roms.size())+(roms.size()==1?" game":" games"));
+  cy = NAV_Y;
+  libraryToolbar(false);
+  float tx=categoryTabs(cx,cy);
+  pageLabel(cx+listInnerW-18,cy,maxRows());
+  librarySearchBar();
+  cy += 46;
   // Column headings
   // Columns from the right: Time played, Recent, Favourite (centred tags).
-  const float TIME_W = 150, REC_W = 100, FAV_W = 110;
+  const float TIME_W = 105, REC_W = 80, FAV_W = 100;
   const float colR = cx + listInnerW - 18, recC = colR - TIME_W - REC_W / 2, favC = recC - REC_W / 2 - FAV_W / 2;
   if (!roms.empty()) {
     gfx::text("Game", cx + 22, cy + 1, 14, col(C_DIM), gfx::BOLD);
@@ -1096,7 +1435,7 @@ static void drawBrowser() {
     cy += head;
   }
   // List
-  gfx::rect(cx, cy, listInnerW, listH, col(C_BG), 10, 1, col(C_LINE));
+  gfx::rect(cx, cy, listInnerW, listH, col(C_BG));
   if (roms.empty()) {
     float ly = cy + 16;
     for (auto& l : emptyLines) { gfx::text(l, cx + 16, ly, 17, col(C_TEXT)); ly += 17 * 1.45f; }
@@ -1106,6 +1445,7 @@ static void drawBrowser() {
       const Rom& r = roms[top + i];
       float ry = cy + 6 + i * ROW_H, rx = cx + 6, rw = listInnerW - 12;
       bool active = top + i == selected && focusArea == "list";
+      if (!active && i%2) gfx::rect(rx, ry, rw, ROW_H, col(C_PANEL));
       if (active) { gfx::rect(rx, ry, rw, ROW_H, col(C_SEL), 6); gfx::rect(rx, ry, 4, ROW_H, col(C_ACCENT), 2); }
       bool fav = contains(favourites, r.name), rec = contains(recentGames, r.name);
       string played = playLabel(r.name);
@@ -1120,10 +1460,25 @@ static void drawBrowser() {
         gfx::rect(recC - tw / 2, ry + 9, tw, 22, Color{0, 0, 0, 0}, 4, 1, col(C_LINE));
         textMid("Recent", recC - tw / 2 + 8, ry + 9, 22, 14, col(C_DIM));
       }
-      textMid(gfx::ellipsize(stripNes(r.name), favC - FAV_W / 2 - rx - 28, 20), rx + 16, ry, ROW_H, 20, col(C_TEXT));
+      textMid(gfx::ellipsize(stripNes(r.name), favC - FAV_W / 2 - rx - 28, 24), rx + 16, ry, ROW_H, 24, col(C_TEXT));
     }
     gfx::noClip();
-    scrollbar(cx + listInnerW + 8, cy, listH, (int)roms.size(), VIS, top);
+    scrollbar(cx + listInnerW + 8, cy, listH, (int)roms.size(), VIS, std::min(top,std::max(0,(int)roms.size()-VIS)));
+  }
+  // Selected game cover preview, using the shared bounded cache.
+  float px=cx+innerW*0.65f+12, pw=innerW*0.35f-12;
+  gfx::rect(px,cy,pw,listH,col(C_BG),8);
+  if(selected>=0 && selected<(int)roms.size()){
+    const Rom& r=roms[selected];
+    float aw=pw-32, ah=std::max(1.0f,listH-144);
+    auto& cover=gameCover(r.dir,r.name);
+    float dy=cy+ah+32;
+    if(cover.image){auto f=cover_policy::fit(cover.w,cover.h,aw,ah);gfx::imageDraw(cover.image,px+16+f.x,cy+16,f.w,f.h);dy=cy+16+f.h+16;}
+    else {gfx::rect(px+16,cy+16,aw,ah,col(C_PANEL),6,1,col(C_LINE));gfx::text("SNES",px+(pw-gfx::textWidth("SNES",32,gfx::BOLD))/2,cy+16+ah/2-16,32,col(C_DIM),gfx::BOLD);}
+    gfx::text(gfx::ellipsize(stripNes(r.name),aw,24),px+16,dy,24,col(C_TEXT));
+    gfx::text(contains(favourites,r.name)?"Favourite":"Super Nintendo",px+16,dy+38,20,col(C_DIM));
+    string played=playLabel(r.name);
+    gfx::text(played.empty()?"Not played":"Playtime: "+played,px+16,dy+70,20,col(C_DIM));
   }
   cy += listH + 12;
   // Buttons
@@ -1139,10 +1494,10 @@ static void drawBrowser() {
     textMid(BROWSER_KEYS[i], lx + (kw - kt) / 2, cy + 8, kw, 15, col(C_TEXT));
     textMid(label, lx + kw + 8, cy, 40, 18, col(i == 2 && exitArmed ? C_ACCENT : C_TEXT));
   }
-  gfx::text("v" APP_VERSION, x + winW - padX - gfx::textWidth("v" APP_VERSION, 14), y + padY + 10, 14, col(C_DIM));
+  gfx::text("v" APP_VERSION, x + winW - padX - gfx::textWidth("v" APP_VERSION, 18), y + padY + 8, 18, col(C_DIM));
 }
 
-static const int SET_ROW_H = 34;
+static const int SET_ROW_H = 44;
 static void drawFolderPicker() {
   const float winW = 960, padX = 20, padY = 18, rowH = 34;
   int total = pickRows();
@@ -1155,11 +1510,11 @@ static void drawFolderPicker() {
   float x = (gfx::UI_W - winW) / 2, y = roundf((gfx::UI_H - winH) / 2);
   gfx::rect(x, y, winW, winH, col(C_PANEL), 14, 1, col(C_LINE));
   float cx = x + padX, cy = y + padY;
-  panelHeader(cx, cy, "ROM folder", "A: open   B: cancel");
+  panelHeader(cx, cy, pickingCoverFolder?"Cover art folder":"ROM folder", "A: open   B: cancel");
   cy += 34 + 12;
   string shown = pickPath.rfind("sdmc:", 0) == 0 ? pickPath.substr(5) : pickPath;
   if (shown.empty()) shown = "/";
-  string note = std::to_string(pickGames) + (pickGames == 1 ? " game here" : " games here");
+  string note = std::to_string(pickGames) + (pickingCoverFolder?" images here":(pickGames == 1 ? " game here" : " games here"));
   textMid(gfx::ellipsize(shown, winW - 2 * padX - 200, 18, gfx::MONO), cx + 4, cy, 26, 18, col(C_TEXT), gfx::MONO);
   textMid(note, cx + winW - 2 * padX - gfx::textWidth(note, 16) - 4, cy, 26, 16, col(C_DIM));
   cy += 30;
@@ -1171,26 +1526,33 @@ static void drawFolderPicker() {
     if (active) { gfx::rect(rx, ry, rw, rowH, col(C_SEL), 6); gfx::rect(rx, ry, 4, rowH, col(C_ACCENT), 2); }
     string label; Color c = col(C_TEXT);
     int up = pickAtRoot() ? 0 : 1;
-    if (i == 0) { label = "Use this folder"; c = gfx::rgb(0x6ee26e); }
+    if (i == 0) { label = addingRomFolder ? "Add this folder" : "Use this folder"; c = gfx::rgb(0x6ee26e); }
     else if (up && i == 1) label = ".. (up one level)";
     else label = pickDirs[i - 1 - up] + "/";
     textMid(gfx::ellipsize(label, rw - 32, 18), rx + 16, ry, rowH, 18, c, i == 0 ? gfx::BOLD : gfx::REGULAR);
   }
   scrollbar(cx + listW + 8, cy, listH, total, vis, pickTop);
 }
+static int settingsTab=0;
+static void settingsTabs(){
+  const char* names[]={"Settings","Cover Art","Credits"};
+  float x=20;gfx::rect(x,18,42,40,col(C_BG),6);textMid("L",x+15,18,40,22,col(C_TEXT));x+=54;
+  for(int i=0;i<3;i++){float w=200;gfx::rect(x,18,w,40,col(i==settingsTab?C_SEL:C_BG),8,1,col(i==settingsTab?C_ACCENT:C_LINE));textMid(names[i],x+(w-gfx::textWidth(names[i],24))/2,18,40,24,col(C_TEXT));x+=w+10;}
+  gfx::rect(x,18,42,40,col(C_BG),6);textMid("R",x+14,18,40,22,col(C_TEXT));
+}
 static void drawSettings() {
-  const float winW = 960, padX = 20, padY = 18, innerW = winW - 2 * padX;
+  const float winW = gfx::UI_W, padX = 20, padY = 18, innerW = winW - 2 * padX;
   int n = (int)SETTINGS_ITEMS.size(), total = n + 1;
-  int vis = std::max(5, std::min(total, (int)((gfx::UI_H * 0.9 - 36 - 50 - 14) / SET_ROW_H)));
+  int vis = std::max(5, std::min(total, (int)((gfx::UI_H - 36 - 46 - 12 - 44) / SET_ROW_H)));
   if (settingsIndex < settingsTop) settingsTop = settingsIndex;
   if (settingsIndex >= settingsTop + vis) settingsTop = settingsIndex - vis + 1;
   bool scroll = total > vis;
   float listW = innerW - (scroll ? 16 : 0), listH = vis * SET_ROW_H + 12;
-  float winH = padY * 2 + 34 + 12 + listH;
-  float x = (gfx::UI_W - winW) / 2, y = roundf((gfx::UI_H - winH) / 2);
-  gfx::rect(x, y, winW, winH, col(C_PANEL), 14, 1, col(C_LINE));
+  settingsTop=std::max(0,std::min(settingsTop,total-vis));
+  float x=0,y=0;
+  gfx::rect(x,y,winW,gfx::UI_H,col(C_PANEL));
   float cx = x + padX, cy = y + padY;
-  panelHeader(cx, cy, "Settings", "for all games");
+  settingsTabs();
   cy += 34 + 12;
   gfx::rect(cx, cy, listW, listH, col(C_BG), 10, 1, col(C_LINE));
   for (int k = 0; k < vis; k++) {
@@ -1200,12 +1562,53 @@ static void drawSettings() {
     float rx = cx + 6, ry = cy + 6 + k * SET_ROW_H, rw = listW - 12;
     if (active) { gfx::rect(rx, ry, rw, SET_ROW_H, col(C_SEL), 6); gfx::rect(rx, ry, 4, SET_ROW_H, col(C_ACCENT), 2); }
     if (i < n) {
-      textMid(SETTINGS_ITEMS[i].label, rx + 16, ry, SET_ROW_H, 18, col(C_TEXT));
       vector<string> ch = SETTINGS_ITEMS[i].choices();
-      valueBox(ch[SETTINGS_ITEMS[i].get()], rx + rw - 12, ry, SET_ROW_H, 18, active);
-    } else textMid("Back", rx + 16, ry, SET_ROW_H, 18, col(C_TEXT));
+      float vw=0;
+      if(!ch.empty()){int v=std::max(0,std::min((int)ch.size()-1,SETTINGS_ITEMS[i].get())); string val=gfx::ellipsize(ch[v],rw*0.48f-64,23); vw=valueBox(val,rx+rw-16,ry,SET_ROW_H,23,active);}
+      textMid(gfx::ellipsize(SETTINGS_ITEMS[i].label,std::max(20.0f,rw-vw-48),23),rx+16,ry,SET_ROW_H,23,col(C_TEXT));
+    } else textMid("Back", rx + 16, ry, SET_ROW_H, 23, col(C_TEXT));
   }
   scrollbar(cx + listW + 8, cy, listH, total, vis, settingsTop);
+  const string hint="Tap or swipe to navigate   |   Left/Right Change   |   Tap here / B: Back";
+  textMid(hint,(winW-gfx::textWidth(hint,20))/2,gfx::UI_H-38,34,20,col(C_DIM));
+}
+
+static void drawCredits(){
+  gfx::rect(0,0,gfx::UI_W,gfx::UI_H,col(C_PANEL));settingsTabs();
+  gfx::text("NS2xSNES9x  v" APP_VERSION,44,110,32,col(C_TEXT),gfx::BOLD);
+  gfx::text("Development: blueshockz47",44,180,26,col(C_TEXT));
+  gfx::text("Original SW2SNES: Rodpad (MIT, copyright 2026)",44,240,26,col(C_TEXT));
+  gfx::text("Emulation: Snes9x and its contributors (non-commercial license)",44,300,24,col(C_TEXT));
+  gfx::text("Switch 2 platform: libounce, ounce-devkit, kaiHEN and contributors",44,360,24,col(C_TEXT));
+  gfx::text("Toolchain: devkitPro and open-source contributors",44,420,24,col(C_TEXT));
+  gfx::text("Full license notices: LICENSE and licenses/ in the project source.",44,500,22,col(C_DIM));
+  gfx::text("Tap tabs   |   Tap here / B: Back to Library",20,gfx::UI_H-34,22,col(C_DIM));
+}
+static int coverAction=0,unmatchedTop=0;
+static bool showUnmatched=false;
+static void coverCommand(int action){
+  coverAction=action;
+  if(action==0){pickingCoverFolder=true;addingRomFolder=false;struct stat st{};pickLoad(stat(coverDirectory().c_str(),&st)==0?coverDirectory():"sdmc:/");mode="folders";}
+  else if(action==1){showUnmatched=false;beginCoverScan();}
+  else {showUnmatched=!showUnmatched;unmatchedTop=0;}
+}
+static void drawCoverGuide(){
+  float w=gfx::UI_W,h=gfx::UI_H;gfx::rect(0,0,w,h,col(C_PANEL));settingsTabs();
+  gfx::text("Cover Art Manager",32,78,32,col(C_TEXT),gfx::BOLD);
+  gfx::text(gfx::ellipsize(coverDirectory(),w-64,24),32,128,24,col(C_DIM));
+  const char* labels[]={"Change Folder","Scan Cover Art","Unmatched Artwork"};
+  for(int i=0;i<3;i++){float x=32+i*490;gfx::rect(x,180,472,58,col(i==coverAction?C_SEL:C_BG),8,2,col(i==coverAction?C_ACCENT:C_LINE));textMid(labels[i],x+(472-gfx::textWidth(labels[i],25))/2,180,58,25,col(C_TEXT));}
+  gfx::rect(32,258,w-64,530,col(C_BG),10,1,col(C_LINE));
+  string status=coverScanning?"Scanning: "+std::to_string(coverCheckCursor)+"/"+std::to_string(coverFiles.size())+" images":coverScanned?(coverRootOK?"Scan complete":"Folder not found"):"Ready to scan";
+  gfx::text(status,56,280,26,col(C_ACCENT),gfx::BOLD);
+  if(showUnmatched){gfx::text("Unmatched valid artwork: "+std::to_string(unmatchedCovers.size()),56,328,24,col(C_TEXT));for(int i=0;i<9&&unmatchedTop+i<(int)unmatchedCovers.size();i++)gfx::text(gfx::ellipsize(unmatchedCovers[unmatchedTop+i],w-112,22),56,370+i*42,22,col(C_TEXT));}
+  else{
+    const string rows[]={"ROMs in library: "+std::to_string(allRoms.size()),"Artwork detected: "+std::to_string(coverFiles.size()),"Valid images: "+std::to_string(coverValid),"Matched ROMs: "+std::to_string(coverMatched),"Missing matches: "+std::to_string(coverScanned?allRoms.size()-coverMatched:0),"Invalid / oversized images: "+std::to_string(coverInvalid)};
+    for(int i=0;i<6;i++)gfx::text(rows[i],56,332+i*48,26,col(C_TEXT));
+    gfx::text("Smart matching enabled | PNG, JPG, JPEG | Max 1024 x 1024",56,660,24,col(C_ACCENT));
+    gfx::text("Subfolders included. Original files are never changed.",56,710,22,col(C_DIM));
+  }
+  textMid("Left/Right: Select   |   A: Open   |   Up/Down: Unmatched list   |   B / Tap here: Back",32,h-44,40,22,col(C_DIM));
 }
 
 static void drawStatsBar() {
@@ -1219,11 +1622,15 @@ static void drawStatsBar() {
 }
 
 static void drawGame(bool dim) {
+  if(running&&screenBorder){uint32_t c=screenBorder==1?0x202020:screenBorder==2?0x302a40:C_ACCENT;gfx::rect(0,0,gfx::UI_W,gfx::UI_H,col(c));}
   if (running) gfx::pictureDraw(picture, picX, picY, picW, picH, picCX, picCY, picCW, picCH);
   drawStatsBar();
   if (hintUntil && !dim) {
-    float w = gfx::textWidth("ZL + ZR: Menu", 16);
-    gfx::text("ZL + ZR: Menu", gfx::UI_W - 16 - w, gfx::UI_H - 12 - 20, 16, gfx::rgb(0x8891a4));
+    string hint="ZL + ZR: Open Menu";
+    float w=gfx::textWidth(hint,28,gfx::BOLD)+40;
+    float x=(gfx::UI_W-w)/2,y=gfx::UI_H*0.5f-28;
+    gfx::rect(x,y,w,56,gfx::rgb(0x101020,0.9f),8);
+    gfx::text(hint,x+20,y+12,28,gfx::rgb(0xffffff),gfx::BOLD);
   }
 }
 
@@ -1251,7 +1658,7 @@ static void drawMenu() {
     if (active) { gfx::rect(cx, ry, w, rowH, col(C_SEL), 8); gfx::rect(cx, ry, 4, rowH, col(C_ACCENT), 2); }
     const MenuItem& m = menuItems[i];
     float vw = 0;
-    if (m.option()) { vector<string> ch = m.choices(); int v = m.get(); vw = valueBox(ch[std::max(0, std::min((int)ch.size() - 1, v))], cx + w - 14, ry, rowH, 18, active) + 16; }
+    if (m.option()) { vector<string> ch = m.choices(); int v = m.get(); vw = valueBox(gfx::ellipsize(ch[std::max(0, std::min((int)ch.size() - 1, v))],w*0.48f-42,18), cx + w - 14, ry, rowH, 18, active) + 16; }
     textMid(gfx::ellipsize(m.label, w - 32 - vw, 21), cx + 18, ry, rowH, 21, col(C_TEXT));
   }
   if (scroll) scrollbar(cx + w + 6, cy + gap, listH - gap, n, vis, menuTop);
@@ -1364,25 +1771,22 @@ static void runFrame(u64 bits, u64 bits2, bool behindMenu) {
   // (see vrrWait), so exactly one frame per loop. A 60 Hz display that is
   // not ticking near 60 Hz falls back to following the clock.
   int due = 1;
-  bool hz120 = !highRefresh() && (tickMs < 15.5 || tickMs > 18);
+  bool hz120 = !highRefresh() && (C->is_pal() || tickMs < 15.5 || tickMs > 18);
   if (hz120) {
-    emuAcc += std::min(loopGapMs, 50.0) * NES_RATE / 1000;
-    due = (int)emuAcc; emuAcc -= due;
-    if (due > 3) { due = 3; emuAcc = 0; }
+    due=timing_policy::due(emuAcc,loopGapMs,gameRate);
   }
   if (fastForward) {
-    ffAcc += FF_FACTOR[ffSpeed] * (hz120 ? std::min(loopGapMs, 50.0) * NES_RATE / 1000 : 1);  // per shown frame
+    ffAcc += FF_FACTOR[ffSpeed] * (hz120 ? std::min(loopGapMs, 50.0) * gameRate / 1000 : 1);  // per shown frame
     due = (int)ffAcc; ffAcc -= due;
   }
   if (due <= 0) { workMs += nowMs() - t0; return; }
 
   int p = 0, p2 = 0;
   for (int i = 0; i < due; i++) {
-    turbo++;
-    p = snesPad(bits); p2 = behindMenu ? 0 : snesPad(bits2, faceMap2);
+    p = snesPad(bits); p2 = snesPad(behindMenu ? 0 : bits2, faceMap2);
     bool last = i == due - 1;
     bool ok;
-    if (last) ok = emulateShown(p, p2, fastForward ? 0 : runAhead, !fastForward);
+    if (last) ok = emulateShown(p, p2, fastForward ? 0 : governor.ahead(performanceProfile, runAhead), !fastForward);
     else { C->set_audio_discard(1); ok = C->frame(p, p2, 0) >= 0; C->audio_take(); C->set_audio_discard(0); }
     if (!ok) { quitGame(); showMessage("Something went wrong:\nEmulation stopped.", [] { mode = "browser"; }); return; }
     emuCount++;
@@ -1394,15 +1798,19 @@ static void runFrame(u64 bits, u64 bits2, bool behindMenu) {
     // sample and smoothed, is steered to the target by a PI loop around the
     // base ratio (60 Hz: display/NES rate difference; 120 Hz: 1, emulation
     // follows the clock). Corrections stay within +-0.5%, inaudible as pitch.
-    double target = AUDIO_TARGET_FRAMES[audioBuffer];
-    pendEma += (audio::queuedFrames() - pendEma) * 0.05;
+    double target = audioRecovery.target(AUDIO_TARGET_FRAMES[audioBuffer]);
+    double queued = audio::queuedFrames();
+    pendEma += (queued - pendEma) * 0.05;
     double err = (target - pendEma) / target;
     audioInteg = std::max(-0.004, std::min(0.004, audioInteg + err * 0.00002));
-    double base = (hz120 || highRefresh()) ? 1.0 : NES_RATE / std::max(59.5, std::min(60.5, 1000.0 / tickMs));
+    double base = (hz120 || highRefresh()) ? 1.0 : gameRate / std::max(59.5, std::min(60.5, 1000.0 / tickMs));
     double r = base * (1 + std::max(-0.005, std::min(0.005, err * 0.004 + audioInteg)));
     if (++ratioTicks >= 4) { ratioTicks = 0; setAudioRatio(round(r * 1e5) / 1e5); }
     // Ran dry (a long stall): refill with a little silence instead of crackling.
-    if (audio::queuedFrames() < 200) { audio::prefill((int)target / 2); pendEma = target / 2; }
+    if (audio::available() && !fastForward && !rewinding && !behindMenu) {
+      if (queued < 200) { ++starvationRefills; audioRecovery.starved(); audioInteg = 0; audio::prefill(audioRecovery.target(AUDIO_TARGET_FRAMES[audioBuffer]) / 2); pendEma = audio::queuedFrames(); }
+      else audioRecovery.tick();
+    }
   }
   emuFrames += 1;
   showFrame();
@@ -1431,9 +1839,17 @@ static double coreLoad() {
   return load < 0 ? -1 : std::min(1.0, load);
 }
 static void updateStats(double t) {
-  if (!running || t - statsAt < 1000) return;
+  if (!running) return;
+  if (mode != "running" && !(mode == "menu" && !pauseInMenu)) { statsAt = t; emuCount = 0; workMs = 0; for (double& x : phase) x = 0; phaseN = 0; return; }
+  if (t - statsAt < 1000) return;
   double secs = (t - statsAt) / 1000, avg, low;
   videoFps(avg, low);
+  const double divisor = std::max(1, phaseN);
+  if (benchmarkFile) {
+    fprintf(benchmarkFile, "%.3f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f,%.3f,%.3f,%llu,%llu,%ld,%d,%d,%d,%.5f\n", (t-startedAt)/1000, emuCount/secs, avg, low, 100*emuCount/secs/gameRate, phase[2]/divisor, phase[3]/divisor, gfx::gpuMs(), audio::available() ? pendEma/48.0 : -1.0, starvationRefills, (unsigned long long)(audio::droppedBuffers()-droppedBase), (long)rewind_bytes(), (int)rewind_count(), (int)fastForward, (int)rewinding, gameRate);
+    fflush(benchmarkFile);
+  }
+  governor.sample((phase[2]+phase[3])/divisor/(1000.0/gameRate), mode == "running" && !fastForward && !rewinding && phaseN > 0);
   char buf[200];
   if (statsLevel == 1) snprintf(buf, sizeof buf, "%.1f fps", avg);
   else {
@@ -1444,30 +1860,212 @@ static void updateStats(double t) {
     snprintf(buf, sizeof buf, "Emu %.1f fps   Video avg %.1f fps   1%% low %.1f fps   CPU %s   GPU %s   %s", emuCount / secs, avg, low, cpuS, gpuS, dispLabel().c_str());
   }
   if (sessionLog < 120) { sessionLog++; record("t%d %s | wait %.2f block %.2f emu %.2f draw %.2f swap %.2f ms, audio q %.0f ms ratio %.4f", sessionLog, buf,
-                                               phase[0] / phaseN, phase[1] / phaseN, phase[2] / phaseN, phase[3] / phaseN, phase[4] / phaseN, pendEma / 48.0, audioRatio); }
+                                               phase[0] / divisor, phase[1] / divisor, phase[2] / divisor, phase[3] / divisor, phase[4] / divisor, pendEma / 48.0, audioRatio); }
   for (double& x : phase) x = 0; phaseN = 0;
   swapAcc = waitAcc = swapMax = 0; swapN = 0;
   statsText = buf;
   emuCount = 0; workMs = 0; statsAt = t;
 }
 
+static bool keyboardRequested=false;
+static void searchWithKeyboard(){
+  SwkbdConfig config{};
+  Result rc=swkbdCreate(&config,0);
+  if(R_SUCCEEDED(rc)){
+    swkbdConfigMakePresetDefault(&config);
+    swkbdConfigSetHeaderText(&config,"Search SNES games");
+    swkbdConfigSetInitialText(&config,libraryQuery.c_str());
+    swkbdConfigSetStringLenMax(&config,40);
+    char result[161]={};
+    rc=swkbdShow(&config,result,sizeof(result));
+    swkbdClose(&config);
+    if(R_SUCCEEDED(rc)){
+      libraryQuery=result;orderRoms();selected=top=0;
+      focusArea=roms.empty()?"tabs":"list";
+      return;
+    }
+    // This SDK reports cancellation and abnormal applet exits identically.
+    if(R_VALUE(rc)==MAKERESULT(Module_Libnx,LibnxError_LibAppletBadExit)){
+      record("Keyboard canceled or closed: 0x%x",(unsigned)rc);
+      return;
+    }
+  }
+  record("Keyboard unavailable: 0x%x",(unsigned)rc);
+  mode="librarysearch";queryLetter=0;
+}
+static library::PageRepeat pageRepeat;
+// Touch actions share the controller's library state and deferred keyboard path.
+static void touchCategory(int v){
+  if(v==listView)return;
+  listView=v;roms.clear();orderRoms();selected=top=0;focusArea=roms.empty()?"tabs":"list";exitArmed=0;
+}
+static float touchStartX=0,touchStartY=0,touchEndX=0,touchEndY=0;
+static bool touchTracking=false;
+static string touchMode;
+static float touchTravel=0,touchCarry=0;
+static double touchTick=0;
+static float touchVelocity=0;
+static int touchPageDirection=0;
+static int lastTouchGame=-1;
+static double lastTouchTime=0;
+static int touchGameAt(float x,float y){
+  if(roms.empty())return -1;
+  int hit=-1;
+  if(libraryGrid){
+    float tw=(gfx::UI_W-40-3*GRID_GAP)/4,th=(gfx::UI_H-150-LIB_EXTRA-2*GRID_GAP)/3;
+    for(int i=0;i<12;i++)if(inside(x,y,20+(i%4)*(tw+GRID_GAP),GRID_TOP+(i/4)*(th+GRID_GAP),tw,th)){hit=library::pageTop(selected,4,3)+i;break;}
+  }else{
+    int size=maxRows();float w=(gfx::UI_W-40)*0.65f-(roms.size()>(size_t)size?16:0);
+    if(inside(x,y,26,LIST_TOP+6,w-12,size*ROW_H))hit=(selected/size)*size+int((y-LIST_TOP-6)/ROW_H);
+  }
+  return hit>=0&&hit<(int)roms.size()?hit:-1;
+}
+static void libraryTap(float x,float y){
+  if(inside(x,y,SEARCH_X,SEARCH_Y,SEARCH_W,SEARCH_H)){
+    if(!libraryQuery.empty()&&x>=SEARCH_X+SEARCH_W-CLEAR_W)clearLibrarySearch();
+    else keyboardRequested=true;
+    return;
+  }
+  if(inside(x,y,VIEW_X,NAV_Y,212,34)){
+    libraryGrid=x>=VIEW_X+104;focusArea="list";saveSettings();return;
+  }
+  float tx=20;
+  if(inside(x,y,tx,NAV_Y,42,34)){touchCategory((listView+(int)LIST_VIEWS.size()-1)%LIST_VIEWS.size());return;}
+  tx+=50;
+  for(size_t i=0;i<LIST_VIEWS.size();i++){
+    float w=gfx::textWidth(LIST_VIEWS[i],17)+32;
+    if(inside(x,y,tx,NAV_Y,w,34)){touchCategory((int)i);return;}
+    tx+=w+8;
+  }
+  if(inside(x,y,tx,NAV_Y,42,34)){touchCategory((listView+1)%LIST_VIEWS.size());return;}
+  int size=libraryGrid?12:maxRows();
+  float right=libraryGrid?gfx::UI_W-250:20+(gfx::UI_W-40)*0.65f-(roms.size()>(size_t)size?16:0)-18;
+  string p="Page "+std::to_string(roms.empty()?0:selected/size+1)+" / "+std::to_string((roms.size()+size-1)/size);
+  float left=right-gfx::textWidth(p,24,gfx::BOLD)-104;
+  int step=inside(x,y,left,NAV_Y,42,34)?-1:inside(x,y,right-42,NAV_Y,42,34)?1:0;
+  if(step&&!roms.empty()){selected=library::movePage(selected,(int)roms.size(),size,step);focusArea="list";return;}
+  float footerY=libraryGrid?gfx::UI_H-48:gfx::UI_H-64;
+  float bw=(gfx::UI_W-70)/3.0f;
+  for(int i=0;i<3;i++)if(inside(x,y,25+i*(bw+10),footerY,bw,libraryGrid?40:64)){
+    lastTouchGame=-1;
+    if(i==0){exitArmed=0;mode="settings";settingsTab=0;settingsIndex=settingsTop=0;}
+    else if(i==1){exitArmed=0;scan();showToast("Library and covers refreshed");}
+    else {double t=nowMs();if(exitArmed>t)quitApp=true;else{focusArea="buttons";btnIndex=2;exitArmed=t+3000;}}
+    return;
+  }
+  int hit=touchGameAt(x,y);
+  if(hit>=0){double t=nowMs();bool launch=hit==selected&&hit==lastTouchGame&&t-lastTouchTime<350;selected=hit;focusArea="list";lastTouchGame=hit;lastTouchTime=t;if(launch){lastTouchGame=-1;startGame(roms[selected]);}}else lastTouchGame=-1;
+ }
+static void activateFolderRow(){
+  int up=pickAtRoot()?0:1;
+      if (pickSel == 0) {
+        string chosen=content_policy::normalize(pickPath);
+        if(chosen.empty()){showToast("Invalid SD folder");return;}
+        if(pickingCoverFolder){customCoverDir=chosen;pickingCoverFolder=false;saveSettings();beginCoverScan();mode="settings";return;}
+        if(addingRomFolder){if(chosen==content_policy::normalize(romDir)||extraRomDirs.size()>=15||!content_policy::add(extraRomDirs,chosen)){showToast("Folder already added or limit reached");return;}}else romDir=chosen;
+        saveSettings(); scan(); mode = "settings";
+        showToast(std::to_string(allRoms.size()) + (allRoms.size() == 1 ? " game in " : " games in ") + (romDir.size() > 5 ? romDir.substr(5) : string("/")));
+      } else if (up && pickSel == 1) pickLoad(parentDir(pickPath));
+      else pickLoad((pickAtRoot() ? string("sdmc:") : pickPath) + "/" + pickDirs[pickSel - 1 - up]);
+}
+static void folderTap(float x,float y){
+  int total=pickRows(),vis=std::max(5,std::min(total,(int)((gfx::UI_H*0.9-36-50-40-14)/34)));
+  float winH=36+46+30+vis*34+12,top=roundf((gfx::UI_H-winH)/2)+100;
+  if(y<top-70||y>=gfx::UI_H-38){mode="settings";return;}
+  if(x>=308&&x<1228&&y>=top&&y<top+vis*34){int i=pickTop+int((y-top)/34);if(i<total){pickSel=i;activateFolderRow();}}
+}
+static void settingsTap(float x,float y){
+  if(y>=18&&y<=58){if(x>=74&&x<704){int tab=int((x-74)/210);if(tab<3){settingsTab=tab;resetArmed=false;}}return;}
+  if(y>=gfx::UI_H-48){saveSettings();mode="browser";return;}
+  if(settingsTab==1){if(y>=180&&y<238&&x>=32&&x<1484){int i=int((x-32)/490);if(i<3)coverCommand(i);}return;}
+  if(settingsTab!=0)return;
+  int total=(int)SETTINGS_ITEMS.size()+1,vis=std::max(5,std::min(total,(int)((gfx::UI_H-138)/SET_ROW_H)));
+  if(y<70||y>=70+vis*SET_ROW_H)return;
+  int i=settingsTop+int((y-70)/SET_ROW_H);if(i<0||i>=total)return;
+  if(i!=settingsIndex)resetArmed=false;settingsIndex=i;
+  if(i==total-1){saveSettings();mode="browser";return;}
+  if(x<gfx::UI_W*0.52f)return;
+  SettingItem it=SETTINGS_ITEMS[i];int n=(int)it.choices().size();if(n>0){float right=gfx::UI_W-20-(total>vis?16:0)-22;string val=gfx::ellipsize(it.choices()[std::max(0,std::min(n-1,it.get()))],(gfx::UI_W-52-(total>vis?16:0))*0.48f-64,23);float left=right-gfx::textWidth(val,23)-gfx::textWidth("<",23,gfx::BOLD)-gfx::textWidth(">",23,gfx::BOLD)-20;it.set((it.get()+n+(x<left+35?-1:1))%n);}
+}
+static void touchScrollRows(int step){
+  int total=(int)SETTINGS_ITEMS.size()+1,vis=std::max(5,std::min(total,(int)((gfx::UI_H-138)/SET_ROW_H)));
+  settingsTop=std::max(0,std::min(total-vis,settingsTop+step));
+  settingsIndex=std::max(settingsTop,std::min(settingsTop+vis-1,settingsIndex));
+}
+static void handleLibraryTouch(){
+  HidTouchScreenState state{};
+  if(!hidGetTouchScreenStates(&state,1))return;
+  double now=nowMs();
+  if(touchMode!=mode){touchMode=mode;touchTracking=false;touchHeld=state.count!=0;touchVelocity=touchCarry=0;lastTouchGame=-1;}
+  if(state.count==0){
+    touchHeld=false;
+    if(!touchTracking){
+      if(mode=="settings"&&settingsTab==0&&fabsf(touchVelocity)>0.02f){float dt=std::min(40.0f,float(now-touchTick));touchCarry+=touchVelocity*dt;int rows=int(touchCarry/SET_ROW_H);if(rows){touchScrollRows(rows);touchCarry-=rows*SET_ROW_H;}touchVelocity*=expf(-dt/120.0f);}
+      touchTick=now;return;
+    }
+    touchTracking=false;
+    float dx=touchEndX-touchStartX,dy=touchEndY-touchStartY;
+    if(mode=="browser"&&touchStartY>=(libraryGrid?GRID_TOP:LIST_TOP)&&!roms.empty()&&((libraryGrid&&fabsf(dx)>70&&fabsf(dx)>fabsf(dy))||(!libraryGrid&&fabsf(dy)>70&&fabsf(dy)>fabsf(dx)))){
+      int step=(libraryGrid?dx:dy)<0?1:-1;
+      selected=library::movePage(selected,(int)roms.size(),libraryGrid?12:maxRows(),step);focusArea="list";lastTouchGame=-1;return;
+    }
+    if(touchTravel<24){if(mode=="folders")folderTap(touchEndX,touchEndY);else if(mode=="settings")settingsTap(touchEndX,touchEndY);else libraryTap(touchEndX,touchEndY);}
+    else {lastTouchGame=-1;if(mode=="folders"){int step=int(-dy/34);pickSel=std::max(0,std::min(pickRows()-1,pickSel+step));}if(mode=="settings"&&settingsTab==1&&showUnmatched)unmatchedTop=std::max(0,std::min(std::max(0,(int)unmatchedCovers.size()-9),unmatchedTop+int(-dy/42)));}
+    touchTick=now;return;
+  }
+  if(state.count!=1){touchHeld=true;touchTracking=false;lastTouchGame=-1;touchVelocity=touchCarry=0;return;}
+  float x=state.touches[0].x*(gfx::UI_W/1280.0f),y=state.touches[0].y*(gfx::UI_H/720.0f);
+  if(!touchHeld){touchHeld=true;touchTracking=true;touchStartX=touchEndX=x;touchStartY=touchEndY=y;touchTravel=touchCarry=touchVelocity=0;touchTick=now;}
+  if(touchTracking){
+    touchTravel=std::max(touchTravel,std::max(fabsf(x-touchStartX),fabsf(y-touchStartY)));
+    if(mode=="settings"&&settingsTab==0&&touchStartY>=70&&touchStartY<gfx::UI_H-48&&touchTravel>=24){
+      float delta=touchEndY-y;float dt=std::max(1.0f,float(now-touchTick));touchVelocity=0.65f*touchVelocity+0.35f*std::max(-2.0f,std::min(2.0f,delta/dt));touchCarry+=delta;int rows=int(touchCarry/SET_ROW_H);if(rows){touchScrollRows(rows);touchCarry-=rows*SET_ROW_H;}
+    }
+    touchEndX=x;touchEndY=y;touchTick=now;
+  }
+}
 static void handleUi(u64 bits) {
+  logoButtons=bits;
   Nav ev = navEvents(bits);
   u64 pressed = ev.pressed;
   double t = nowMs();
+  int shoulder=((bits&B_R)?1:0)-((bits&B_L)?1:0);
+  bool pageContext=mode=="browser" && !roms.empty() && !((bits&B_L)&&(bits&B_R)) && !(pressed&(B_PLUS|B_MINUS|B_Y|B_X|B_A|B_B|HidNpadButton_ZL|HidNpadButton_ZR));
+  int pageStep=pageRepeat.update(shoulder,((pressed&(B_L|B_R))!=0),pageContext,t);
   if (mode == "browser") {
-    // L/ZL and R/ZR cycle the All/Favourites/Recent tabs from anywhere.
-    int tabStep = ((pressed & (B_R | HidNpadButton_ZR)) ? 1 : 0) - ((pressed & (B_L | HidNpadButton_ZL)) ? 1 : 0);
+    if((pressed & B_A) && (bits & B_Y)){
+      if(!recentGames.empty())for(const auto& r:allRoms)if(r.name==recentGames.front()){Rom copy=r;startGame(copy,true);return;}
+      showToast("No recent game available");return;
+    }
+    if(pressed & B_PLUS){libraryGrid=!libraryGrid;focusArea="list";saveSettings();return;}
+    if((bits & HidNpadButton_ZL) && (bits & B_MINUS) && (pressed & (HidNpadButton_ZL|B_MINUS))){
+      if(!libraryQuery.empty())clearLibrarySearch();
+      return;
+    }
+    if(pressed & B_MINUS){if(bits&B_Y){mode="librarysearch";queryLetter=0;}else keyboardRequested=true;return;}
+    int tabStep = ((pressed & HidNpadButton_ZR)?1:0)-((pressed & HidNpadButton_ZL)?1:0);
     if (tabStep) {
       int n = (int)LIST_VIEWS.size();
-      listView = (listView + tabStep + n) % n; roms.clear(); orderRoms(); selected = 0;
+      listView = (listView + tabStep + n) % n; roms.clear(); orderRoms(); selected = top = 0;
       if (focusArea == "list" && roms.empty()) focusArea = "tabs";
     }
     // Y / X: the Settings and Refresh buttons (B is Exit, below).
-    if (pressed & B_Y) { exitArmed = 0; mode = "settings"; settingsIndex = 0; settingsTop = 0; return; }
+    if (pressed & B_Y) { exitArmed = 0; mode = "settings"; settingsTab=0; settingsIndex = 0; settingsTop = 0; return; }
     if (pressed & B_X) { exitArmed = 0; scan(); showToast("List refreshed"); return; }
     if (exitArmed && (t > exitArmed || (pressed & ~(u64)(B_A | B_B)) || ev.up || ev.down || focusArea != "buttons" || btnIndex != 2)) exitArmed = 0;
+    if(libraryGrid){
+      if(!roms.empty()){
+        if(pageStep){selected=library::movePage(selected,(int)roms.size(),12,pageStep);return;}
+        if(ev.up)selected=std::max(0,selected-4);
+        if(ev.down)selected=std::min((int)roms.size()-1,selected+4);
+        if(ev.left)selected=std::max(0,selected-1);
+        if(ev.right)selected=std::min((int)roms.size()-1,selected+1);
+        if(pressed&B_A){startGame(roms[selected]);return;}
+      }
+      if(pressed&B_B){libraryGrid=false;focusArea="buttons";btnIndex=2;exitArmed=t+3000;}return;
+    }
     int VIS = std::max(1, std::min((int)roms.size(), maxRows()));
+    if(pageStep){selected=library::movePage(selected,(int)roms.size(),maxRows(),pageStep);focusArea="list";return;}
     if (focusArea == "tabs") {
       if (pressed & B_LEFT) { int v = std::max(0, listView - 1); if (v != listView) { listView = v; roms.clear(); orderRoms(); } }
       if (pressed & B_RIGHT) { int v = std::min((int)LIST_VIEWS.size() - 1, listView + 1); if (v != listView) { listView = v; roms.clear(); orderRoms(); } }
@@ -1483,7 +2081,7 @@ static void handleUi(u64 bits) {
       if (pressed & B_LEFT) btnIndex = std::max(0, btnIndex - 1);
       if (pressed & B_RIGHT) btnIndex = std::min(2, btnIndex + 1);
       if (pressed & B_A) {
-        if (btnIndex == 0) { mode = "settings"; settingsIndex = 0; settingsTop = 0; }
+        if (btnIndex == 0) { mode = "settings"; settingsTab=0; settingsIndex = 0; settingsTop = 0; }
         else if (btnIndex == 1) { scan(); showToast("List refreshed"); }
         else if (exitArmed) quitApp = true;
         else exitArmed = t + 3000;
@@ -1492,19 +2090,25 @@ static void handleUi(u64 bits) {
     }
     if (pressed & B_B) { if (exitArmed) quitApp = true; else { focusArea = "buttons"; btnIndex = 2; exitArmed = t + 3000; } }
     if (roms.empty() && focusArea == "list") focusArea = "buttons";
+  } else if(mode=="librarysearch"){
+    int n=(int)QUERY_LETTERS.size();
+    if(pressed&B_LEFT)queryLetter=(queryLetter+n-1)%n;
+    if(pressed&B_RIGHT)queryLetter=(queryLetter+1)%n;
+    if((pressed&B_A)&&libraryQuery.size()<40)libraryQuery+=QUERY_LETTERS[queryLetter];
+    if((pressed&B_X)&&!libraryQuery.empty())libraryQuery.pop_back();
+    if(pressed&B_Y)libraryQuery.clear();
+    if(pressed&(B_PLUS|B_B)){orderRoms();mode="browser";focusArea=roms.empty()?"tabs":"list";}
   } else if (mode == "folders") {
     int total = pickRows(), up = pickAtRoot() ? 0 : 1;
     if (ev.up) pickSel = (pickSel - 1 + total) % total;
     if (ev.down) pickSel = (pickSel + 1) % total;
     if (pressed & B_A) {
-      if (pickSel == 0) {
-        romDir = pickAtRoot() ? "sdmc:" : pickPath;
-        saveSettings(); scan(); mode = "settings";
-        showToast(std::to_string(allRoms.size()) + (allRoms.size() == 1 ? " game in " : " games in ") + (romDir.size() > 5 ? romDir.substr(5) : string("/")));
-      } else if (up && pickSel == 1) pickLoad(parentDir(pickPath));
-      else pickLoad((pickAtRoot() ? string("sdmc:") : pickPath) + "/" + pickDirs[pickSel - 1 - up]);
+      activateFolderRow();
     } else if (pressed & B_B) mode = "settings";
   } else if (mode == "settings") {
+    if(pressed&(B_L|B_R)){settingsTab=(settingsTab+3+((pressed&B_R)?1:0)-((pressed&B_L)?1:0))%3;resetArmed=false;return;}
+    if(settingsTab==1){if(ev.left)coverAction=(coverAction+2)%3;if(ev.right)coverAction=(coverAction+1)%3;if(pressed&B_A)coverCommand(coverAction);if(showUnmatched){if(ev.up)unmatchedTop=std::max(0,unmatchedTop-1);if(ev.down)unmatchedTop=std::min(std::max(0,(int)unmatchedCovers.size()-9),unmatchedTop+1);}if(pressed&B_B){saveSettings();mode="browser";}return;}
+    if(settingsTab!=0){if(pressed&B_B){saveSettings();mode="browser";}return;}
     int nItems = (int)SETTINGS_ITEMS.size();
     if (ev.up || ev.down || (pressed & B_B)) resetArmed = false;
     if (ev.up) settingsIndex = (settingsIndex - 1 + nItems + 1) % (nItems + 1);
@@ -1536,19 +2140,54 @@ static void handleUi(u64 bits) {
   }
 }
 
+static void traceRuntimeExit() {
+  FILE* f = fopen("sdmc:/switch/NS2xSNES9x/log.txt", "a");
+  if (f) { fputs("runtime: atexit callback reached\n", f); fclose(f); }
+}
+
+static bool ensureDirectory(const char* path){
+  struct stat st;
+  if(stat(path,&st)==0)return S_ISDIR(st.st_mode);
+  if(mkdir(path,0777)==0)return true;
+  return stat(path,&st)==0 && S_ISDIR(st.st_mode);
+}
+static void startupScreen(int stage,const string& error=""){
+  gfx::waitPrevious();gfx::beginFrame(col(C_BG));
+  const char* stages[]={"Creating application and cover directories","Creating ROM directory","Preparing configuration","Initializing emulator","Scanning game library"};
+  gfx::text("NS2xSNES9x",440,100,42,col(C_TEXT),gfx::BOLD);
+  gfx::text("First-Time Setup",440,170,32,col(C_TEXT));
+  for(int i=0;i<5;i++)gfx::text(string(i<stage?"[Done] ":i==stage?"> ":"    ")+stages[i],440,250+i*62,26,col(i==stage?C_ACCENT:C_TEXT));
+  gfx::rect(440,590,650,12,col(C_LINE),6);gfx::rect(440,590,650*stage/5.0f,12,col(C_ACCENT),6);
+  if(!error.empty()){gfx::text(gfx::ellipsize(error,1100,24),220,650,24,col(C_TEXT));gfx::text("Press B to exit and check your SD card.",440,700,22,col(C_DIM));}
+  gfx::endFrame(frameQueue);gfx::waitPrevious();
+}
 int main(int argc, char** argv) {
   romfsInit();
-  mkdir("sdmc:/switch", 0777); mkdir(DATA_DIR, 0777);
-  // First launch only (no settings file yet): create the default ROM folder.
-  // Later launches leave the SD card alone, so people who keep ROMs elsewhere
-  // (and removed roms/nes) don't get it back.
-  bool firstLaunch = !exists(SETTINGS());
-  if (firstLaunch) { mkdir("sdmc:/roms", 0777); mkdir(DEFAULT_ROM_DIR, 0777); saveSettings(); }
-  logFile = fopen((string(DATA_DIR) + "/log.txt").c_str(), "w");
-  record("SW2SNES %s", APP_VERSION);
-
+  bool migrationReady=branding_migration::migrate("sdmc:/switch/ns2snes-9x", DATA_DIR);
+  bool firstLaunch=!exists(SETTINGS());
   string error;
-  if (!gfx::init(error)) { record("gfx: %s", error.c_str()); if (logFile) fclose(logFile); romfsExit(); return 1; }
+  if (!gfx::init(error)) { romfsExit(); return 1; }
+  applyTheme();
+  if(firstLaunch)startupScreen(0);
+  bool dirs=migrationReady && ensureDirectory("sdmc:/switch") && ensureDirectory(DATA_DIR);
+  bool coverDirReady=dirs && ensureDirectory(coverDirectory().c_str());
+  if(firstLaunch && dirs){startupScreen(1);dirs=ensureDirectory("sdmc:/roms") && ensureDirectory(DEFAULT_ROM_DIR);}
+  if(firstLaunch && dirs){startupScreen(2);saveSettings();dirs=exists(SETTINGS());}
+  if(!dirs){
+    padConfigureInput(1,HidNpadStyleSet_NpadStandard);PadState setupPad;padInitialize(&setupPad,HidNpadIdType_No1,HidNpadIdType_Handheld);
+    startupScreen(0,"Unable to migrate existing data or create required directories/settings.");
+    while(appletMainLoop()){padUpdate(&setupPad);if(padGetButtonsDown(&setupPad)&B_B)break;svcSleepThread(16000000);}
+    gfx::shutdown();romfsExit();return 1;
+  }
+  if(firstLaunch)startupScreen(3);
+  const string logPath = string(DATA_DIR) + "/log.txt";
+  const string previousLog = string(DATA_DIR) + "/log.previous.txt";
+  if (exists(logPath)) { remove(previousLog.c_str()); rename(logPath.c_str(), previousLog.c_str()); }
+  logFile = fopen(logPath.c_str(), "a");
+  std::atexit(traceRuntimeExit);
+  record("NS2xSNES9x %s", APP_VERSION);
+  if(!coverDirReady)record("Cover directory unavailable; ROM sidecars remain supported");
+
   string audioError;
   bool sound = audio::init(audioError);
   if (!sound) record("audio: %s", audioError.c_str());
@@ -1557,6 +2196,7 @@ int main(int argc, char** argv) {
   PadState pad1, pad2;
   padInitialize(&pad1, HidNpadIdType_No1, HidNpadIdType_Handheld);
   padInitialize(&pad2, HidNpadIdType_No2);
+  hidInitializeTouchScreen();
 
   W = 256; H = 224;
   picture = gfx::pictureCreate(512, 478);  // the largest SNES frame (512 x 478 interlaced)
@@ -1573,6 +2213,7 @@ int main(int argc, char** argv) {
   loadSettings();
   loadPlaytime();
   rebuildSettings();
+  if(firstLaunch)startupScreen(4);
   scan();
   if (!sound) showToast("Audio unavailable", 4000);
   padUpdate(&pad1);
@@ -1596,23 +2237,36 @@ int main(int argc, char** argv) {
     // VRR screen refreshes exactly with the game (even frame times, no audio
     // stretch); input is read right after the wait (late, like frame delay).
     if (highRefresh() && running && (mode == "running" || (mode == "menu" && !pauseInMenu))) {
-      double period = 1000.0 / NES_RATE, tnow = nowMs();
+      double period = 1000.0 / gameRate, tnow = nowMs();
       if (!vrrNext || tnow - vrrNext > period * 2) vrrNext = tnow;  // start or resync after a stall
-      while (nowMs() < vrrNext - 0.25) svcSleepThread(250000);
+      for (;;) {
+        double remaining = vrrNext - nowMs() - 0.25;
+        if (remaining <= 0) break;
+        svcSleepThread((int64_t)(std::min(remaining, 4.0) * 1000000.0));
+      }
       vrrNext += period;
     } else vrrNext = 0;
-    if (mode == "running" && !highRefresh() && FRAME_DELAY_MS[frameDelay] && tickMs > 12) {
-      double until = tc + FRAME_DELAY_MS[frameDelay];
-      while (nowMs() < until) svcSleepThread(200000);
+    if (mode == "running" && !highRefresh() && FRAME_DELAY_MS[governor.delay(performanceProfile, frameDelay)] && tickMs > 12) {
+      double until = tc + FRAME_DELAY_MS[governor.delay(performanceProfile, frameDelay)];
+      for (;;) {
+        double remaining = until - nowMs();
+        if (remaining <= 0) break;
+        svcSleepThread((int64_t)(std::min(remaining, 2.0) * 1000000.0));
+      }
     }
     padUpdate(&pad1); padUpdate(&pad2);
-    u64 bits = padGetButtons(&pad1), bits2 = padGetButtons(&pad2);
+    u64 bits = reconnectP1.filter(padIsConnected(&pad1), analogButtons(&pad1)), bits2 = reconnectP2.filter(padIsConnected(&pad2), analogButtons(&pad2));
+    if (!padIsConnected(&pad1)) turboP1.reset();
+    if (!padIsConnected(&pad2)) turboP2.reset();
     frameDrawn = false;
     if (mode == "running") runFrame(bits, bits2, false);
     else {
       if (mode == "menu" && running && !pauseInMenu) runFrame(0, 0, true);
       handleUi(bits);
+      if((mode=="browser"||mode=="settings"||mode=="folders")&&!running&&!keyboardRequested){if(bits){touchVelocity=touchCarry=0;touchTracking=false;touchHeld=true;}handleLibraryTouch();}else {touchHeld=true;touchTracking=false;lastTouchGame=-1;touchMode.clear();touchVelocity=touchCarry=0;}
     }
+    if(!running&&mode=="settings"&&settingsTab==1)tickCoverScan();
+    else if(!running&&coverScanning&&coverDirCursor<coverDirs.size()){string rel=coverDirs[coverDirCursor++];readCoverDir(rel);}
     double t = nowMs();
     if (toastUntil && t > toastUntil) toastUntil = 0;
     if (hintUntil && t > hintUntil) hintUntil = 0;
@@ -1621,9 +2275,16 @@ int main(int argc, char** argv) {
       drawGame(mode != "running");
       if (mode == "menu") drawMenu();
       if (mode == "ggedit") drawCodeEditor();
-    } else if (mode == "settings") drawSettings();
+    } else if (mode == "settings") {if(settingsTab==1)drawCoverGuide();else if(settingsTab==2)drawCredits();else drawSettings();}
     else if (mode == "folders") drawFolderPicker();
-    else drawBrowser();
+    else if(mode=="librarysearch"){
+      float x=(gfx::UI_W-800)/2,y=(gfx::UI_H-260)/2;
+      gfx::rect(x,y,800,260,col(C_PANEL),14,1,col(C_LINE));
+      gfx::text("Search games",x+24,y+24,26,col(C_TEXT),gfx::BOLD);
+      gfx::text(libraryQuery+"_",x+24,y+80,24,col(C_TEXT));
+      gfx::text(string("<  ")+QUERY_LETTERS[queryLetter]+"  >",x+24,y+130,24,col(C_ACCENT));
+      gfx::text("Left/Right letter | A Add | X Delete | Y Clear | + / B Done",x+24,y+205,17,col(C_DIM));
+    } else drawBrowser();
     if (mode == "message") drawMessage();
     if (running && mode == "running" && (rewinding || fastForward)) {
       string tag = rewinding ? (rewind_count() ? "<< Rewind" : "<< Rewind (start)") : ">> " + FF_SPEEDS[ffSpeed];
@@ -1644,6 +2305,7 @@ int main(int argc, char** argv) {
     drawToast();
     double td = nowMs();
     gfx::endFrame(frameQueue);
+    if(keyboardRequested){touchHeld=true;touchTracking=false;lastTouchGame=-1;keyboardRequested=false;gfx::waitPrevious();searchWithKeyboard();lastBits=~(u64)0;heldDirs=0;resetClock();}
     double te = nowMs();
     phase[0] += tb - ta; phase[1] += tc - tb; phase[2] += t - tc; phase[3] += td - t; phase[4] += te - td; phaseN++;
 
@@ -1663,14 +2325,25 @@ int main(int argc, char** argv) {
     updateStats(after);
   }
 
+  record("shutdown: begin");
   if (running) quitGame();
   saveSettings();
-  gfx::imageDestroy(graphImage);
-  gfx::pictureDestroy(picture);
+  record("shutdown: textures");
+  clearCovers();
+  gfx::imageDestroy(graphImage); graphImage=nullptr;
+  gfx::pictureDestroy(picture); picture=nullptr;
+  record("shutdown: audio");
   audio::shutdown();
+  record("shutdown: EGL");
   gfx::shutdown();
-  record("exit");
-  if (logFile) fclose(logFile);
+  record("shutdown: romfs begin");
   romfsExit();
+  record("shutdown: romfs complete");
+  record("shutdown: clearing UI containers");
+  messageThen = nullptr;
+  menuItems.clear(); SETTINGS_ITEMS.clear();
+  allRoms.clear(); roms.clear(); pickDirs.clear();
+  record("shutdown: returning from main");
+  if (logFile) { fclose(logFile); logFile=nullptr; }
   return 0;
 }
