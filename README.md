@@ -4,11 +4,9 @@
 
 Powered by Snes9x and designed for kaiHEN homebrew. Based on [SW2SNES by Rodpad](https://github.com/Rodpad/SW2SNES).
 
-![Version](https://img.shields.io/badge/version-1.0.0%20in%20preparation-blue) ![Platform](https://img.shields.io/badge/platform-Switch%202-lightgrey)
+![Version](https://img.shields.io/badge/version-1.0.0--Stable-brightgreen) ![Platform](https://img.shields.io/badge/platform-Switch%202-lightgrey)
 
-[Downloads](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
-
-> **Release in preparation.** Features below describe the development build. RC20 is awaiting successful CI and console testing. Public source synchronization and the first downloadable release are pending.
+[**Download v1.0.0-Stable**](https://github.com/blueshockz47/NS2SNES-9X/releases/download/v1.0.0-Stable/NS2xSNES9x-v1.0.0-Stable.zip) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
 ## Features
 
@@ -21,8 +19,6 @@ Powered by Snes9x and designed for kaiHEN homebrew. Based on [SW2SNES by Rodpad]
 - **Offline operation:** no required internet connection.
 
 ## Installation
-
-Once v1.0.0 is published:
 
 1. Download the latest release from [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases).
 2. Extract and copy the NRO to your SD card using either location below.
@@ -95,6 +91,6 @@ It also includes:
 - libretro-common (MIT)
 - Roboto (Apache 2.0) and Source Code Pro (SIL OFL 1.1) fonts
 - libounce and libnx (ISC), libkaihen (ISC), OunceVK / Mesa (MIT), mimalloc (MIT),
-  FreeType (FTL), HarfBuzz (MIT), libpng, libjpeg-turbo (development build), zlib, minizip (zlib licence) and bzip2
+  FreeType (FTL), HarfBuzz (MIT), libpng, libjpeg-turbo, zlib, minizip (zlib licence) and bzip2
 
 Their licence texts are in `licenses/`.
