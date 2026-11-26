@@ -2,120 +2,169 @@
 
 **Native SNES emulation for Nintendo Switch 2**
 
-A community development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES), powered by Snes9x and designed for hbmenu under [kaiHEN](https://github.com/ouncebrew/kaihen).
+A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
 
-![Development](https://img.shields.io/badge/development-v1.0.0--RC1-blue) ![CI](https://img.shields.io/badge/RC1%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware%20validation-in%20progress-orange)
+![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC7-blue) ![CI](https://img.shields.io/badge/RC7%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware-testing-orange)
 
-## Release status
+[Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-**v1.0.0-RC1 — hardware validation in progress.**
+> **First public beta coming soon.** RC7 passed host regression tests and ARM64 NRO compilation. Hardware testing is ongoing. The public main branch currently retains the upstream baseline; the features documented here describe the private RC7 development build. No NS2SNES-9X beta binary has been published yet.
 
-The release candidate has passed host regression tests and ARM64 NRO compilation. 21 of 22 planned development phases have been implemented, with final hardware acceptance and public release remaining. The historical ounce-devkit 20261115 SDK is pinned following exit-crash testing.
+## Highlights
 
-[Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
+| Feature | What you get |
+| --- | --- |
+| Game library | Fullscreen List and 4 × 3 Grid, cover previews, search and sorting |
+| Fast browsing | Tap or hold L/R to page through large collections |
+| Native interface | Switch software keyboard, SNES Classic theme and fullscreen settings tabs |
+| Emulation | Snes9x, enhancement chips, regional timing and run-ahead |
+| Saves | Ten slots, timestamps, integrity checks, backups and resume |
+| Offline | Local ROMs, local cover art and no required online service |
 
-The current release candidate is private. The public main branch retains the upstream baseline and project documentation until the stable release; the features below describe the RC1 development build, not the current public source. No stable download is available yet.
+## Installation
 
-## What's new in NS2SNES-9X
-
-### Interface and game library
-- Edge-to-edge fullscreen grid and list layouts, with a 4 × 3 cover grid.
-- Local PNG cover art, bounded cover cache and incremental loading.
-- Search, favourites, recently played, playtime and sorting by name, playtime or recent activity.
-- Multiple ROM folders, remembered selection and optimized library scanning.
-- Dark, OLED Black, Light and SNES Classic themes with six accent choices.
-- D-pad and analog-stick navigation in all four grid directions.
-
-### Graphics and performance
-- Switch 2 (16:9) fullscreen aspect option: fills the display by stretching, without cropping.
-- ARM64 NEON RGB565 conversion and optimized rewind delta processing.
-- Adaptive performance profiles, frame pacing and frame-delay refinements.
-- PAL/NTSC regional timing, graphics upload validation and shader fallback.
-- Retained OpenGL ES shaders, run-ahead, 120 Hz/VRR support and fast-forward.
-
-### Audio and controls
-- Adaptive audio queue recovery, buffer accounting and allocation cleanup.
-- Independent turbo per player/button, neutral reconnect gating and opposing-direction filtering.
-- Controller presets, per-player remapping and adjustable analog deadzone.
-
-### Saves and compatibility
-- Ten save-state slots with date/time, embedded integrity checks and previous-state backups.
-- SRAM backups, safer temporary-file replacement and resume last game.
-- Missing-only import of original SW2SNES SRAM and first four states for unpatched games.
-- IPS, BPS and UPS sidecar patches, ZIP CRC validation and patch-specific save names.
-- MSU-1 companion path support and enhancement-chip diagnostics.
-
-### Stability and diagnostics
-- Validated rewind delta decoding and reset after state loading.
-- Per-session benchmark CSV logs with FPS, region-relative speed, timing, audio queue and rewind statistics.
-- Historical SDK pinning, sanitizer-enabled host regression tests, synthetic NTSC/PAL/MSU-1 smoke tests and ARM64 build validation.
-- Improved shutdown diagnostics, file-reading checks and SRAM bounds validation.
-
-## Core features inherited from SW2SNES
-
-- Snes9x (libretro), including its enhancement-chip support (SuperFX, SA-1, DSP-n, CX4, S-DD1, SPC7110 and others)
-- Hi-res and interlaced modes (512 wide, 448/478 high)
-- Low input latency: one frame in flight, run-ahead (1–2 frames), frame delay at 60 Hz
-- 120 Hz / VRR on the Switch 2 screen
-- Rewind (hold ZL) and fast-forward (hold or toggle ZR)
-- GPU shaders: CRT-Royale (lite), CRT-Geom, CRT-Lottes, CRT-Easymode, CRT-Aperture,
-  zfast CRT, LCD grid, Scale2x, sharp bilinear, bilinear
-- NTSC signal simulation (composite, composite with dot crawl, S-Video)
-- Curvature, rounded corners, vignette and brightness boost
-- Aspect ratio, integer or fit scaling, overscan
-- Save states per game, battery saves, optional auto-load of the latest state
-- Two players, with separate button mapping and turbo for each
-- Game Genie and Pro Action Replay codes (on-screen editor)
-- Favourites, recently played and time played per game
-- Zipped ROMs (`.zip` with a `.sfc`/`.smc` inside)
-- Per-game or global settings; advanced options can be hidden
-
-## Installation (for the upcoming stable release)
+Once the first public beta is available:
 
 1. Set up kaiHEN and hbmenu on your Switch 2.
-2. Copy the released `ns2snes-9x.nro` to `/switch/ns2snes-9x/ns2snes-9x.nro`.
-3. Place your own SNES ROMs in `/roms/snes/` or select another ROM folder.
-4. Launch NS2SNES-9X from hbmenu.
+2. Download **ns2snes-9x.nro** from the [Releases page](https://github.com/blueshockz47/NS2SNES-9X/releases).
+3. Copy it to the SD card as shown below.
+4. Launch NS2SNES-9X from hbmenu. First-time setup creates the default ROM directory and configuration and displays initialization progress.
+5. Copy your own SNES games into the ROM folder, then press X in the library to refresh.
 
-No ROMs are included. Back up saves before updating. Close the emulator before replacing its NRO. Settings, saves and logs are stored in `/switch/ns2snes-9x/`. Older builds cannot read the new wrapped save-state format; legacy compatibility is not guaranteed.
+```text
+SD card/
+├── switch/
+│   └── ns2snes-9x/
+│       └── ns2snes-9x.nro
+└── roms/
+    └── snes/
+        ├── Super Mario World.sfc
+        └── Super Mario World.png
+```
+
+Supported ROM extensions: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` archives. Additional ROM directories can be configured in Settings. No ROMs or commercial artwork are provided.
+
+### Updating
+
+Close the emulator before replacing the NRO. Back up `/switch/ns2snes-9x/` first. Replace only the NRO; retain saves, settings and playtime files. Older builds cannot read the new wrapped save-state format.
 
 ## Controls
 
-| Switch 2 | SNES / app |
+### Game library
+
+| Button | Action |
 | --- | --- |
-| D-pad / left stick | D-pad |
-| A, B, X, Y | SNES A, B, X, Y (default) |
-| L, R | SNES L, R (default) |
+| D-pad / left stick | Navigate |
+| A | Launch selected game |
+| L / R | Previous / next page (14 ROMs in List, 12 in Grid) |
+| Hold L / R | Accelerated page scrolling |
+| ZL / ZR | All / Favourites / Recent categories |
+| + | Toggle List / Grid |
+| − | Native ROM search keyboard |
+| Y + − | Manual search fallback |
+| X | Refresh library |
+| Y | Open Settings |
+| B | Back / exit confirmation |
+
+### Settings
+
+L/R switches between **Settings**, **Cover Art** and **Credits**. Up/down selects an option; left/right or A changes/selects it; B returns to the library.
+
+### During gameplay
+
+| Button | Action |
+| --- | --- |
+| D-pad / left stick | SNES D-pad |
+| A/B/X/Y, L/R | SNES buttons (remappable) |
 | + / − | Start / Select |
-| ZL + ZR | In-game menu (press again to close) |
-| ZL (hold) | Rewind |
-| ZR | Fast-forward |
+| ZL + ZR | Open or close in-game menu |
+| Hold ZL | Rewind |
+| ZR | Fast-forward (hold or toggle) |
 
-Buttons can be remapped per player in Settings, including turbo.
+A short on-screen reminder appears when starting a game. The C button is not used for the emulator menu.
 
-In the game list: Y opens Settings, X refreshes the list, B exits, and L/R or
-ZL/ZR switch between All, Favourites and Recent.
+## Cover art
 
-## Development roadmap
+No internet connection is needed. Put a PNG beside the ROM with exactly the same base filename:
 
-| Phases | Focus | Status |
-| --- | --- | --- |
-| 1–3 | Foundation, stability, diagnostics | Implemented |
-| 4–7 | Core, adaptive performance, audio, input | Implemented |
-| 8–11 | Library, themes, graphics, save manager | Implemented |
-| 12–14 | Compatibility, content, beta hardening | Implemented |
-| 15–17 | Fullscreen UI, library and save refinements | Implemented |
-| 18–20 | Performance, controller and final beta fixes | Implemented |
-| 21 | Release candidate | CI passed |
-| 22 | v1.0.0-Stable | Pending hardware acceptance |
+```text
+/roms/snes/Aladdin (U) [!].sfc
+/roms/snes/Aladdin (U) [!].png
+```
 
-## Known limitations
+For ZIP ROMs, match the ZIP filename, not the internal ROM filename. PNG dimensions must be at most 1024 × 1024. Press X to refresh after copying images. The emulator preserves artwork aspect ratio and caches images. See the in-app **Settings → Cover Art** tab.
 
-Physical compatibility, long-session stability, power consumption and performance gains are still being evaluated. No measured speedup is claimed. Vulkan/HDR, multitap, named controller profiles and save-state thumbnails are deferred. Public source and stable binaries will be synchronized after acceptance.
+Smart title/checksum matching and a centralized cover directory are planned for a later version, not included in RC7.
+
+## Features
+
+### Library and interface
+- Edge-to-edge List View with selected-game cover preview and 12-cover Grid View.
+- Native Switch software keyboard, manual fallback, favourites, recently played, playtime and sorting by name, favourites, recent activity or playtime.
+- Multiple ROM folders, remembered selection, deduplicated scanning and bounded incremental PNG artwork loading.
+- Visible page counters, L/R paging and accelerated hold-to-scroll; ZL/ZR category indicators.
+- SNES Classic (factory default), Dark, OLED Black and Light themes, six accent choices.
+- Fullscreen Settings, Cover Art guide and Credits tabs; first-launch setup feedback and directory error screen.
+
+### Graphics and emulation
+- Snes9x core with SuperFX, SA-1, DSP, CX4, S-DD1, SPC7110 and other enhancement-chip support.
+- Hi-res/interlaced output, PAL/NTSC timing, run-ahead (1–2 frames), frame delay, rewind and fast-forward.
+- ARM64 NEON RGB565 conversion, optimized rewind deltas, adaptive performance profiles and frame pacing refinements.
+- OpenGL ES shader pipeline with upload validation and shader fallback; inherited 120 Hz/VRR support where available.
+- CRT-Royale lite, CRT-Geom, CRT-Lottes, CRT-Easymode, CRT-Aperture, zfast CRT, LCD grid, Scale2x, sharp bilinear and bilinear.
+- RGB/composite/S-Video simulation, curvature, corner radius/softness, vignette, brightness boost, overscan and screen borders.
+- Switch 2 (16:9) fullscreen stretching option, original aspect options and integer/fit scaling.
+
+### Audio and controllers
+- Audio queue recovery, buffer accounting and allocation cleanup.
+- Two-player remapping, controller presets, adjustable analog deadzone, independent turbo, neutral reconnect gating and opposing-direction filtering.
+- Game Genie and Pro Action Replay cheats, global and per-game settings.
+
+### Saves and compatibility
+- Ten save-state slots with timestamps, integrity checks and previous-state backups.
+- SRAM backups, safer temporary-file replacement, resume last game and optional automatic state loading.
+- Missing-only import of original SW2SNES SRAM and first four save slots for unpatched games; original files remain untouched.
+- IPS/BPS/UPS sidecar patches, ZIP CRC validation, patch-specific save identities and MSU-1 companion path support.
+
+### Diagnostics and stability
+- Validated rewind decoding and history reset after state loading.
+- Per-session benchmark CSVs under `/switch/ns2snes-9x/benchmarks/`: FPS, region-relative speed, timing, audio queue and rewind statistics.
+- Shutdown diagnostics, file-reading checks, SRAM bounds validation, sanitizer host tests and synthetic NTSC/PAL/MSU-1 smoke tests.
+- Historical ounce-devkit 20261115 SDK pinned following hardware exit-crash investigation.
+
+### Factory defaults
+
+Fresh installations use SNES Classic theme, Balanced performance, one-frame run-ahead, FPS display, Switch 2 16:9, RGB, Scale2x and Medium brightness boost. Existing saved settings are retained.
+
+## Troubleshooting and feedback
+
+- **No games:** check ROM directory and extensions, then press X.
+- **No cover:** verify exact basename, PNG extension and dimensions; refresh the library.
+- **Menu:** press ZL + ZR together, not C.
+- **Startup or exit issue:** note whether this is a fresh installation, and include the emulator log if available.
+- **Performance issue:** include game/region, handheld or docked mode, settings and benchmark CSV if available.
+
+[Open an issue](https://github.com/blueshockz47/NS2SNES-9X/issues/new) with version, reproduction steps, expected and actual behavior. Remove private information from logs before sharing.
+
+## Roadmap
+
+| Milestone | Focus |
+| --- | --- |
+| v1.0.0-RC7 | Hardware acceptance in progress |
+| v1.0.0-Beta | First public beta after acceptance |
+| v1.0.0-Stable | Stable release after beta feedback |
+| v1.1 | Smart cover matching, metadata and premium library |
+| v1.2 | Advanced save manager |
+| v1.3 | Modern in-game menu |
+| v1.4 | Performance and battery improvements |
+| v1.5 | SwitchNest integration |
+| v2.0 | Investigate advanced Switch 2 features |
+
+Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
 
 ## Credits
 
-Original SW2SNES by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew and the kaiHEN community. NS2SNES-9X development by blueshockz47.
+NS2SNES-9X development by **blueshockz47**. Original [SW2SNES](https://github.com/Rodpad/SW2SNES) by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew, libounce and the kaiHEN community.
 
 ## Licence
 
