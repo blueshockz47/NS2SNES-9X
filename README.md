@@ -4,21 +4,23 @@
 
 A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
 
-![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC13-blue) ![CI](https://img.shields.io/badge/RC13%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/RC13%20hardware-pending-orange)
+![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC15-blue) ![CI](https://img.shields.io/badge/RC15%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/RC15%20hardware-pending-orange)
 
 [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-> **First public beta coming soon.** NS2xSNES9x v1.0.0-RC13 passed host regression tests, migration tests and ARM64 NRO compilation. RC12 completed handheld hardware acceptance; RC13 fresh-install and migration checks are pending. The public main branch retains the upstream baseline; the features below describe the private development build. No public beta binary has been published yet.
+> **First public beta in preparation.** The private v1.0.0-RC15 build passed host regression tests, ARM64 NRO compilation and artifact validation. RC15 console testing is pending. Public main retains the upstream source baseline; features below describe the development build. No public beta binary has been published yet.
 
 ## What's new in the first beta
 
 - **New identity:** NS2xSNES9x branding throughout the app, Homebrew Menu metadata, startup and credits screens, and renamed NRO and data directory. Existing fork data can be imported without overwriting destination files.
 
 - **Touch-enabled library:** tap the search bar to open the native keyboard, clear searches, switch views, select categories and change pages. Tap a game to select it, double-tap to launch, swipe vertically in List or horizontally in Grid to change pages.
-- **SNES Heritage interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
+- **Retro-inspired interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
 - **Smart Cover Matching:** dedicated cover folder, exact and case-insensitive filename matching, conservative title normalization for region and revision tags, and fallback to ROM-sidecar artwork. Ambiguous matches are skipped.
 - **Modern game library:** fullscreen List and Grid, rapid page navigation, sorting, favourites, recent games, playtime and multiple ROM folders.
 - **Refined emulation:** ARM64 NEON conversion, adaptive performance, improved audio recovery, rewind and frame pacing, ten save slots and safer save handling.
+
+- **Refined appearance:** updated Homebrew Menu icon, four additional brand-neutral themes, centered navigation controls, aligned settings labels and values, and bounded long text to reduce overlap.
 
 ## Highlights
 
@@ -26,10 +28,25 @@ A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Swi
 | --- | --- |
 | Game library | Fullscreen List and 4 × 3 Grid, cover previews, search and sorting |
 | Fast browsing | Tap or hold L/R to page through large collections |
-| Native interface | Switch software keyboard, SNES Classic theme and fullscreen settings tabs |
+| Native interface | Switch software keyboard, Eight themes and fullscreen settings tabs |
 | Emulation | Snes9x, enhancement chips, regional timing and run-ahead |
 | Saves | Ten slots, timestamps, integrity checks, backups and resume |
 | Offline | Local ROMs, local cover art and no required online service |
+
+## Themes
+
+| Theme | Palette |
+| --- | --- |
+| Dark | Charcoal and red |
+| OLED Black | True black and mint |
+| Light | Soft white and blue |
+| Classic Violet | Violet and lavender |
+| Retro Ivory | Warm ivory and purple |
+| Neon Cyber | Deep purple and electric cyan |
+| Retro CRT | Dark green and phosphor green |
+| Midnight Ocean | Navy and turquoise |
+
+Change the theme under Settings → UI theme. Existing saved theme indices are preserved.
 
 ## Installation
 
@@ -58,7 +75,7 @@ Supported ROM extensions: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` a
 
 ### Updating
 
-For RC13, the recommended approach is a fresh installation in `/switch/NS2xSNES9x/`. Keep a backup of the previous `/switch/ns2snes-9x/` folder. If it remains on the SD card, RC13 automatically copies missing data from it, so for a truly fresh setup move the old folder off the SD card before launch. The migration retains original files and skips old executable files. Console validation of migration is pending.
+For a first installation of the renamed fork, use a fresh installation in `/switch/NS2xSNES9x/`. Keep a backup of the previous `/switch/ns2snes-9x/` folder. If it remains on the SD card, the renamed build automatically copies missing data from it, so for a truly fresh setup move the old folder off the SD card before launch. The migration retains original files and skips old executable files. Console validation of migration is pending.
 
 Close the emulator before replacing the NRO. Back up `/switch/NS2xSNES9x/` first. Replace only the NRO; retain saves, settings and playtime files. Older builds cannot read the new wrapped save-state format.
 
@@ -70,7 +87,7 @@ Close the emulator before replacing the NRO. Back up `/switch/NS2xSNES9x/` first
 | --- | --- |
 | D-pad / left stick | Navigate |
 | A | Launch selected game |
-| L / R | Previous / next page (14 ROMs in List, 12 in Grid) |
+| L / R | Previous / next page (List pages or 12 ROMs in Grid) |
 | Hold L / R | Accelerated page scrolling |
 | ZL / ZR | All / Favourites / Recent categories |
 | + | Toggle List / Grid |
@@ -133,7 +150,7 @@ The centralized folder supports exact, case-insensitive and normalized title mat
 - Native Switch software keyboard, manual fallback, favourites, recently played, playtime and sorting by name, favourites, recent activity or playtime.
 - Multiple ROM folders, remembered selection, deduplicated scanning and bounded incremental PNG artwork loading.
 - Visible page counters, L/R paging and accelerated hold-to-scroll; ZL/ZR category indicators.
-- SNES Classic (factory default), Dark, OLED Black and Light themes, six accent choices.
+- Eight themes: Classic Violet (factory default), Dark, OLED Black, Light, Retro Ivory, Neon Cyber, Retro CRT and Midnight Ocean. Six accent choices, instant palette preview and automatic preference saving.
 - Fullscreen Settings, Cover Art guide and Credits tabs; first-launch setup feedback and directory error screen.
 
 ### Graphics and emulation
@@ -164,7 +181,7 @@ The centralized folder supports exact, case-insensitive and normalized title mat
 
 ### Factory defaults
 
-Fresh installations use SNES Classic theme, Balanced performance, one-frame run-ahead, FPS display, Switch 2 16:9, RGB, Scale2x and Medium brightness boost. Existing saved settings are retained.
+Fresh installations use Classic Violet theme, Balanced performance, one-frame run-ahead, FPS display, Switch 2 16:9, RGB, Scale2x and Medium brightness boost. Existing saved settings are retained.
 
 ## Troubleshooting and feedback
 
@@ -182,16 +199,18 @@ Fresh installations use SNES Classic theme, Balanced performance, one-frame run-
 | --- | --- |
 | v1.0.0-RC12 | Hardware acceptance completed |
 | v1.0.0-RC13 | Rebranding and migration; CI passed, hardware testing pending |
+| v1.0.0-RC14 | Updated Homebrew Menu icon; CI passed |
+| v1.0.0-RC15 | Eight themes and alignment refinements; CI passed, hardware testing pending |
 | v1.0.0-Beta | First public beta after acceptance |
 | v1.0.0-Stable | Stable release after beta feedback |
 | v1.1 | Expanded cover matching, metadata and premium library |
 | v1.2 | Advanced save manager |
 | v1.3 | Modern in-game menu |
 | v1.4 | Performance and battery improvements |
-| v1.5 | SwitchNest integration |
+| Future (deferred) | Optional cover downloader via SwitchNest PC bridge, FTP transfer and Downloads/snes/cover cache; reconsider direct downloads if safe networking becomes available |
 | v2.0 | Investigate advanced Switch 2 features |
 
-Touchscreen Settings and in-game menu support are deferred until after the first beta. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
+The proposed cover downloader is not implemented; manual cover installation remains supported. DNS filtering alone does not guarantee isolation. Touchscreen Settings and in-game menu support are deferred until after the first beta. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
 
 ## Credits
 
