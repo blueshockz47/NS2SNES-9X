@@ -1,5 +1,7 @@
 # NS2xSNES9x
 
+![NS2xSNES9x release banner](banner.png)
+
 **A modern SNES emulator for Nintendo Switch 2.**
 
 Powered by Snes9x and designed for kaiHEN homebrew. Based on [SW2SNES by Rodpad](https://github.com/Rodpad/SW2SNES).
