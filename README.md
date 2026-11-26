@@ -1,231 +1,85 @@
 # NS2xSNES9x
 
-**Native SNES emulation for Nintendo Switch 2**
+**A modern SNES emulator for Nintendo Switch 2.**
 
-A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
+Powered by Snes9x and designed for kaiHEN homebrew. Based on [SW2SNES by Rodpad](https://github.com/Rodpad/SW2SNES).
 
-![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC20-blue) ![RC19 CI](https://img.shields.io/badge/RC19%20CI-passed-brightgreen) ![RC20](https://img.shields.io/badge/RC20-validation%20pending-orange)
+![Version](https://img.shields.io/badge/version-1.0.0%20in%20preparation-blue) ![Platform](https://img.shields.io/badge/platform-Switch%202-lightgrey)
 
-[Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
+[Downloads](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-> **First public release in preparation.** RC19 passed CI and console cover-matching testing. RC20 adds further matching and Grid refinements; release awaits CI and console acceptance. Public main retains the upstream source baseline; the features below describe the private development builds. No public binary has been published yet.
+> **Release in preparation.** Features below describe the development build. RC20 is awaiting successful CI and console testing. Public source synchronization and the first downloadable release are pending.
 
-## What's new in v1.0.0
+## Features
 
-- **New identity:** NS2xSNES9x branding throughout the app, Homebrew Menu metadata, startup and credits screens, and renamed NRO and data directory. Existing fork data can be imported without overwriting destination files.
-
-- **Touch-enabled library:** tap the search bar to open the native keyboard, clear searches, switch views, select categories and change pages. Tap a game to select it, double-tap to launch, swipe vertically in List or horizontally in Grid to change pages.
-- **Retro-inspired interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
-- **Smart Cover Matching:** dedicated cover folder, exact and case-insensitive filename matching, conservative title normalization for region and revision tags, and fallback to ROM-sidecar artwork. Supports PNG, JPG and JPEG, underscore-separated names, GoodTools/No-Intro region tags and conservative title matching. RC20 adds article, ampersand, subtitle and regional fallback refinements; hardware validation pending.
-- **Modern game library:** fullscreen List and Grid, rapid page navigation, sorting, favourites, recent games, playtime and multiple ROM folders.
-- **Refined emulation:** ARM64 NEON conversion, adaptive performance, improved audio recovery, rewind and frame pacing, ten save slots and safer save handling.
-
-- **Refined appearance:** updated Homebrew Menu icon, four additional brand-neutral themes, centered navigation controls, aligned settings labels and values, and bounded long text to reduce overlap.
-
-- **Cover Art Manager:** choose a persistent custom directory, recursively scan artwork, view progress, matched ROMs, unmatched images and invalid/oversized counts.
-- **Touch navigation:** Settings tabs, value selectors, folder selection, momentum-assisted Settings scrolling and library footer actions. Library swipes remain page-based.
-- **Adaptive artwork:** aspect-preserving List and Grid rendering without coloured placeholder gaps around loaded images. RC20 increases Grid artwork space and uses a single title line.
-
-## Highlights
-
-| Feature | What you get |
-| --- | --- |
-| Game library | Fullscreen List and 4 × 3 Grid, cover previews, search and sorting |
-| Fast browsing | Tap or hold L/R to page through large collections |
-| Native interface | Switch software keyboard, Eight themes and fullscreen settings tabs |
-| Emulation | Snes9x, enhancement chips, regional timing and run-ahead |
-| Saves | Ten slots, timestamps, integrity checks, backups and resume |
-| Offline | Local ROMs, local cover art and no required online service |
-
-## Themes
-
-| Theme | Palette |
-| --- | --- |
-| Dark | Charcoal and red |
-| OLED Black | True black and mint |
-| Light | Soft white and blue |
-| Classic Violet | Violet and lavender |
-| Retro Ivory | Warm ivory and purple |
-| Neon Cyber | Deep purple and electric cyan |
-| Retro CRT | Dark green and phosphor green |
-| Midnight Ocean | Navy and turquoise |
-
-Change the theme under Settings → UI theme. Existing saved theme indices are preserved.
+- **Modern library:** fullscreen List and Grid views, search, favourites, recent games, playtime and multiple ROM folders.
+- **Touch navigation:** native search keyboard, library gestures, Settings scrolling, folder selection and navigation buttons.
+- **Smart Cover Matching:** PNG, JPG and JPEG support, automatic filename matching, custom folders, recursive scanning and unmatched artwork diagnostics.
+- **Eight themes:** Dark, OLED Black, Light, Classic Violet, Retro Ivory, Neon Cyber, Retro CRT and Midnight Ocean.
+- **Flexible emulation:** Snes9x core, enhancement chips, rewind, fast-forward, run-ahead, display filters and adjustable performance settings.
+- **Save management:** ten save-state slots, SRAM backups, resume and per-game settings.
+- **Offline operation:** no required internet connection.
 
 ## Installation
 
-Once the first public release is available:
+Once v1.0.0 is published:
 
-1. Set up kaiHEN and hbmenu on your Switch 2.
-2. Download **NS2xSNES9x.nro** from the [Releases page](https://github.com/blueshockz47/NS2SNES-9X/releases).
-3. Copy it to the SD card as shown below.
-4. Launch NS2xSNES9x from hbmenu. First-time setup creates the default ROM directory and configuration and displays initialization progress.
-5. Copy your own SNES games into the ROM folder, then press X in the library to refresh.
+1. Download the latest release from [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases).
+2. Extract and copy the NRO to your SD card.
+3. Add your own SNES games to the ROM folder.
+4. Launch NS2xSNES9x through hbmenu under kaiHEN.
 
 ```text
 SD card/
-├── switch/
-│   └── NS2xSNES9x/
-│       ├── NS2xSNES9x.nro
-│       └── covers/
-│           └── Super Mario World.png
-└── roms/
-    └── snes/
-        ├── Super Mario World.sfc
-        └── Super Mario World.png
+├── switch/NS2xSNES9x/
+│   ├── NS2xSNES9x.nro
+│   └── covers/
+└── roms/snes/
 ```
 
-Supported ROM extensions: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` archives. Additional ROM directories can be configured in Settings. No ROMs or commercial artwork are provided.
+Supported games: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` archives.
 
-### Updating
-
-For a first installation of the renamed fork, use a fresh installation in `/switch/NS2xSNES9x/`. Keep a backup of the previous `/switch/ns2snes-9x/` folder. If it remains on the SD card, the renamed build automatically copies missing data from it, so for a truly fresh setup move the old folder off the SD card before launch. The migration retains original files and skips old executable files. Console validation of migration is pending.
-
-Close the emulator before replacing the NRO. Back up `/switch/NS2xSNES9x/` first. Replace only the NRO; retain saves, settings and playtime files. Older builds cannot read the new wrapped save-state format.
+**Updating:** close the emulator, back up its data folder and replace only the NRO. Keep your saves and settings. Older fork data may be imported automatically without overwriting existing files.
 
 ## Controls
-
-### Game library
 
 | Button | Action |
 | --- | --- |
 | D-pad / left stick | Navigate |
-| A | Launch selected game |
-| L / R | Previous / next page (List pages or 12 ROMs in Grid) |
-| Hold L / R | Accelerated page scrolling |
-| ZL / ZR | All / Favourites / Recent categories |
-| + | Toggle List / Grid |
-| − | Native ROM search keyboard |
-| Y + − | Manual search fallback |
-| ZL + − | Clear active search |
-| X | Refresh library |
-| Y | Open Settings |
-| B | Back / exit confirmation |
+| A | Play |
+| L / R | Change page |
+| ZL / ZR | Change library category |
+| + | List / Grid |
+| − | Search |
+| X | Refresh |
+| Y | Settings |
+| B | Back / Exit |
+| ZL + ZR (in-game) | Emulator menu |
 
-### Touchscreen (handheld)
-
-| Gesture | Action |
-| --- | --- |
-| Tap search field | Open native keyboard |
-| Tap Clear Search | Reset query |
-| Tap List / Grid or category | Switch view or category |
-| Tap L / R page badge | Change page |
-| Tap game | Select |
-| Double-tap game | Launch |
-| Swipe vertically in List | Previous / next page |
-| Swipe horizontally in Grid | Previous / next page |
-
-Settings supports touch tabs, value changes, swipe scrolling and Back. Cover Art Manager actions and folder selection also support touch. Library footer Settings, Refresh and Exit are touch-enabled; Exit requires confirmation. In-game menus remain controller-operated.
-
-### Settings
-
-L/R switches between **Settings**, **Cover Art** and **Credits**. Up/down selects an option; left/right or A changes/selects it; B returns to the library.
-
-### During gameplay
-
-| Button | Action |
-| --- | --- |
-| D-pad / left stick | SNES D-pad |
-| A/B/X/Y, L/R | SNES buttons (remappable) |
-| + / − | Start / Select |
-| ZL + ZR | Open or close in-game menu |
-| Hold ZL | Rewind |
-| ZR | Fast-forward (hold or toggle) |
-
-A short on-screen reminder appears when starting a game. The C button is not used for the emulator menu.
+In handheld mode, tap to select, double-tap a game to launch, or swipe to browse. Settings and library navigation also support touch. In-game menus remain controller-operated.
 
 ## Cover art
 
-No internet connection is needed. Default directory: `/switch/NS2xSNES9x/covers/`. Supported formats: PNG, JPG, JPEG (case-insensitive extensions), up to 1024 × 1024 pixels. Sidecar artwork beside ROMs supports basic filename matching; use the central directory for full smart matching.
+Copy PNG, JPG or JPEG images (up to 1024 × 1024) into `/switch/NS2xSNES9x/covers/`, then open **Settings → Cover Art → Scan Cover Art**.
 
-| ROM | Artwork |
+Smart matching recognizes common naming conventions, for example:
+
+| ROM | Cover |
 | --- | --- |
-| Aladdin (U) [!].sfc | Aladdin.jpg |
 | ActRaiser 2 (U).sfc | actraiser_2_usa.jpg |
-| 2020 Super Baseball (U).sfc | 2020_super_baseball_usa.jpg |
+| Aladdin (U) [!].sfc | Aladdin.jpg |
 
-For ZIP ROMs, use the ZIP basename. Open **Settings → Cover Art → Scan Cover Art** after adding images. Choose Change Folder to select a custom directory. The scanner includes subfolders, reports invalid images and unmatched artwork, and never renames or deletes original files.
+Custom folders and subfolders are supported. Original files are never renamed. Artwork retains its aspect ratio in both library views. Some titles may require exact filenames; online artwork downloads are not included.
 
-Exact matches take priority. Smart matching recognizes region aliases, revision and dump tags, underscores and common punctuation. RC20 adds conservative subtitle and regional fallback rules. Not every ROM has corresponding artwork; ambiguous matches can remain unmatched. No checksum matching or online downloads are included.
+## Help & feedback
 
-**Hardware test (RC19):** 614 of 784 ROMs matched (78.32%), up from 1, with 765 valid images and zero invalid images in one test collection. This is not a universal coverage guarantee. RC20 results are pending.
-
-## Features
-
-### Library and interface
-- Edge-to-edge List View with selected-game cover preview and 12-cover Grid View.
-- Native Switch software keyboard, manual fallback, favourites, recently played, playtime and sorting by name, favourites, recent activity or playtime.
-- Multiple ROM folders, remembered selection, deduplicated scanning and bounded incremental PNG/JPG/JPEG artwork loading.
-- Visible page counters, L/R paging and accelerated hold-to-scroll; ZL/ZR category indicators.
-- Eight themes: Classic Violet (factory default), Dark, OLED Black, Light, Retro Ivory, Neon Cyber, Retro CRT and Midnight Ocean. Six accent choices, instant palette preview and automatic preference saving.
-- Fullscreen Settings, Cover Art Manager and Credits tabs; first-launch setup feedback and directory error screen.
-
-### Graphics and emulation
-- Snes9x core with SuperFX, SA-1, DSP, CX4, S-DD1, SPC7110 and other enhancement-chip support.
-- Hi-res/interlaced output, PAL/NTSC timing, run-ahead (1–2 frames), frame delay, rewind and fast-forward.
-- ARM64 NEON RGB565 conversion, optimized rewind deltas, adaptive performance profiles and frame pacing refinements.
-- OpenGL ES shader pipeline with upload validation and shader fallback; inherited 120 Hz/VRR support where available.
-- CRT-Royale lite, CRT-Geom, CRT-Lottes, CRT-Easymode, CRT-Aperture, zfast CRT, LCD grid, Scale2x, sharp bilinear and bilinear.
-- RGB/composite/S-Video simulation, curvature, corner radius/softness, vignette, brightness boost, overscan and screen borders.
-- Switch 2 (16:9) fullscreen stretching option, original aspect options and integer/fit scaling.
-
-### Audio and controllers
-- Audio queue recovery, buffer accounting and allocation cleanup.
-- Two-player remapping, controller presets, adjustable analog deadzone, independent turbo, neutral reconnect gating and opposing-direction filtering.
-- Game Genie and Pro Action Replay cheats, global and per-game settings.
-
-### Saves and compatibility
-- Ten save-state slots with timestamps, integrity checks and previous-state backups.
-- SRAM backups, safer temporary-file replacement, resume last game and optional automatic state loading.
-- Missing-only import of original SW2SNES SRAM and first four save slots for unpatched games; original files remain untouched.
-- IPS/BPS/UPS sidecar patches, ZIP CRC validation, patch-specific save identities and MSU-1 companion path support.
-
-### Diagnostics and stability
-- Validated rewind decoding and history reset after state loading.
-- Per-session benchmark CSVs under `/switch/NS2xSNES9x/benchmarks/`: FPS, region-relative speed, timing, audio queue and rewind statistics.
-- Shutdown diagnostics, file-reading checks, SRAM bounds validation, sanitizer host tests and synthetic NTSC/PAL/MSU-1 smoke tests.
-- Historical ounce-devkit 20261115 SDK pinned following hardware exit-crash investigation.
-
-### Factory defaults
-
-Fresh installations use Classic Violet theme, Balanced performance, one-frame run-ahead, FPS display, Switch 2 16:9, RGB, Scale2x and Medium brightness boost. Existing saved settings are retained.
-
-## Troubleshooting and feedback
-
-- **No games:** check ROM directory and extensions, then press X.
-- **No cover:** verify the covers folder or sidecar path, supported extension and dimensions; run Scan Cover Art and inspect unmatched artwork.
-- **Menu:** press ZL + ZR together, not C.
-- **Startup or exit issue:** note whether this is a fresh installation, and include the emulator log if available.
-- **Performance issue:** include game/region, handheld or docked mode, settings and benchmark CSV if available.
-
-[Open an issue](https://github.com/blueshockz47/NS2SNES-9X/issues/new) with version, reproduction steps, expected and actual behavior. Remove private information from logs before sharing.
-
-## Roadmap
-
-| Milestone | Focus |
-| --- | --- |
-| v1.0.0-RC12 | Hardware acceptance completed |
-| v1.0.0-RC13 | Rebranding and migration; CI passed, hardware testing pending |
-| v1.0.0-RC14 | Updated Homebrew Menu icon; CI passed |
-| v1.0.0-RC15 | Eight themes and alignment refinements; CI passed, hardware testing pending |
-| v1.0.0-RC16 | JPEG support and touchscreen Settings |
-| v1.0.0-RC17 | Cover Art Manager and touch footer controls |
-| v1.0.0-RC18 | Adaptive artwork layout; List hardware confirmed |
-| v1.0.0-RC19 | Smart filename matching; CI and matching hardware test passed |
-| v1.0.0-RC20 | Expanded matching and larger Grid artwork; validation pending |
-| v1.0.0 | First public release after final acceptance |
-| v1.1 | Expanded cover matching, metadata and premium library |
-| v1.2 | Advanced save manager |
-| v1.3 | Modern in-game menu |
-| v1.4 | Performance and battery improvements |
-| Future (deferred) | Optional cover downloader via SwitchNest PC bridge, FTP transfer and Downloads/snes/cover cache; reconsider direct downloads if safe networking becomes available |
-| v2.0 | Investigate advanced Switch 2 features |
-
-The proposed cover downloader is not implemented; manual cover installation remains supported. DNS filtering alone does not guarantee isolation. Touchscreen in-game menu support remains deferred. Future features are proposals, subject to SDK support and testing. No measured speedup or universal game compatibility is claimed.
+If games or artwork are missing, check your folder settings and refresh or rescan. For crashes or compatibility issues, include your emulator version, game, settings and reproduction steps in a [GitHub issue](https://github.com/blueshockz47/NS2SNES-9X/issues).
 
 ## Credits
 
-NS2xSNES9x development by **blueshockz47**. Original [SW2SNES](https://github.com/Rodpad/SW2SNES) by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew, libounce and the kaiHEN community.
+Developed by **blueshockz47**. Based on [Rodpad's SW2SNES](https://github.com/Rodpad/SW2SNES), with thanks to Snes9x contributors, devkitPro, ouncebrew, libounce and the kaiHEN community.
+
+No ROMs or commercial artwork are included.
 
 ## Licence
 
