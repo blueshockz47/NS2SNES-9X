@@ -25,7 +25,7 @@ Powered by Snes9x and designed for kaiHEN homebrew. Based on [SW2SNES by Rodpad]
 Once v1.0.0 is published:
 
 1. Download the latest release from [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases).
-2. Extract and copy the NRO to your SD card.
+2. Extract and copy the NRO to your SD card using either location below.
 3. Add your own SNES games to the ROM folder.
 4. Launch NS2xSNES9x through hbmenu under kaiHEN.
 
@@ -36,6 +36,8 @@ SD card/
 │   └── covers/
 └── roms/snes/
 ```
+
+**Alternative installation:** place `NS2xSNES9x.nro` directly in the SD card root (`/NS2xSNES9x.nro`) and launch it using a compatible homebrew launcher. The emulator still stores its data and cover art in `/switch/NS2xSNES9x/`.
 
 Supported games: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` archives.
 
