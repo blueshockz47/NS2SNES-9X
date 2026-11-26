@@ -1,16 +1,18 @@
-# NS2SNES-9X
+# NS2xSNES9x
 
 **Native SNES emulation for Nintendo Switch 2**
 
 A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Switch 2 homebrew under [kaiHEN](https://github.com/ouncebrew/kaihen). A development fork of [Rodpad/SW2SNES](https://github.com/Rodpad/SW2SNES).
 
-![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC12-blue) ![CI](https://img.shields.io/badge/RC12%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/hardware-accepted-brightgreen)
+![Release candidate](https://img.shields.io/badge/development-v1.0.0--RC13-blue) ![CI](https://img.shields.io/badge/RC13%20CI-passed-brightgreen) ![Hardware](https://img.shields.io/badge/RC13%20hardware-pending-orange)
 
 [Releases](https://github.com/blueshockz47/NS2SNES-9X/releases) · [Installation](#installation) · [Controls](#controls) · [Cover art](#cover-art) · [Report an issue](https://github.com/blueshockz47/NS2SNES-9X/issues)
 
-> **First public beta coming soon.** RC12 passed host regression tests and ARM64 NRO compilation. The developer completed the handheld hardware acceptance checklist, including touchscreen navigation and game launch/exit. The public main branch currently retains the upstream baseline; the features documented here describe the private RC12 development build. No NS2SNES-9X beta binary has been published yet.
+> **First public beta coming soon.** NS2xSNES9x v1.0.0-RC13 passed host regression tests, migration tests and ARM64 NRO compilation. RC12 completed handheld hardware acceptance; RC13 fresh-install and migration checks are pending. The public main branch retains the upstream baseline; the features below describe the private development build. No public beta binary has been published yet.
 
 ## What's new in the first beta
+
+- **New identity:** NS2xSNES9x branding throughout the app, Homebrew Menu metadata, startup and credits screens, and renamed NRO and data directory. Existing fork data can be imported without overwriting destination files.
 
 - **Touch-enabled library:** tap the search bar to open the native keyboard, clear searches, switch views, select categories and change pages. Tap a game to select it, double-tap to launch, swipe vertically in List or horizontally in Grid to change pages.
 - **SNES Heritage interface:** italic wordmark, four-colour stripe, animated controller with live input feedback, aligned branding and navigation rows, and integrated search controls.
@@ -34,16 +36,16 @@ A controller-friendly SNES emulator powered by Snes9x, designed for Nintendo Swi
 Once the first public beta is available:
 
 1. Set up kaiHEN and hbmenu on your Switch 2.
-2. Download **ns2snes-9x.nro** from the [Releases page](https://github.com/blueshockz47/NS2SNES-9X/releases).
+2. Download **NS2xSNES9x.nro** from the [Releases page](https://github.com/blueshockz47/NS2SNES-9X/releases).
 3. Copy it to the SD card as shown below.
-4. Launch NS2SNES-9X from hbmenu. First-time setup creates the default ROM directory and configuration and displays initialization progress.
+4. Launch NS2xSNES9x from hbmenu. First-time setup creates the default ROM directory and configuration and displays initialization progress.
 5. Copy your own SNES games into the ROM folder, then press X in the library to refresh.
 
 ```text
 SD card/
 ├── switch/
-│   └── ns2snes-9x/
-│       ├── ns2snes-9x.nro
+│   └── NS2xSNES9x/
+│       ├── NS2xSNES9x.nro
 │       └── covers/
 │           └── Super Mario World.png
 └── roms/
@@ -56,7 +58,9 @@ Supported ROM extensions: `.sfc`, `.smc`, `.fig`, `.swc` and compatible `.zip` a
 
 ### Updating
 
-Close the emulator before replacing the NRO. Back up `/switch/ns2snes-9x/` first. Replace only the NRO; retain saves, settings and playtime files. Older builds cannot read the new wrapped save-state format.
+For RC13, the recommended approach is a fresh installation in `/switch/NS2xSNES9x/`. Keep a backup of the previous `/switch/ns2snes-9x/` folder. If it remains on the SD card, RC13 automatically copies missing data from it, so for a truly fresh setup move the old folder off the SD card before launch. The migration retains original files and skips old executable files. Console validation of migration is pending.
+
+Close the emulator before replacing the NRO. Back up `/switch/NS2xSNES9x/` first. Replace only the NRO; retain saves, settings and playtime files. Older builds cannot read the new wrapped save-state format.
 
 ## Controls
 
@@ -111,7 +115,7 @@ A short on-screen reminder appears when starting a game. The C button is not use
 
 ## Cover art
 
-No internet connection is needed. The recommended location is `/switch/ns2snes-9x/covers/`, created automatically. Use the ROM basename for the PNG, for example `Aladdin (U) [!].png`. Alternatively, put a PNG beside the ROM:
+No internet connection is needed. The recommended location is `/switch/NS2xSNES9x/covers/`, created automatically. Use the ROM basename for the PNG, for example `Aladdin (U) [!].png`. Alternatively, put a PNG beside the ROM:
 
 ```text
 /roms/snes/Aladdin (U) [!].sfc
@@ -154,7 +158,7 @@ The centralized folder supports exact, case-insensitive and normalized title mat
 
 ### Diagnostics and stability
 - Validated rewind decoding and history reset after state loading.
-- Per-session benchmark CSVs under `/switch/ns2snes-9x/benchmarks/`: FPS, region-relative speed, timing, audio queue and rewind statistics.
+- Per-session benchmark CSVs under `/switch/NS2xSNES9x/benchmarks/`: FPS, region-relative speed, timing, audio queue and rewind statistics.
 - Shutdown diagnostics, file-reading checks, SRAM bounds validation, sanitizer host tests and synthetic NTSC/PAL/MSU-1 smoke tests.
 - Historical ounce-devkit 20261115 SDK pinned following hardware exit-crash investigation.
 
@@ -177,6 +181,7 @@ Fresh installations use SNES Classic theme, Balanced performance, one-frame run-
 | Milestone | Focus |
 | --- | --- |
 | v1.0.0-RC12 | Hardware acceptance completed |
+| v1.0.0-RC13 | Rebranding and migration; CI passed, hardware testing pending |
 | v1.0.0-Beta | First public beta after acceptance |
 | v1.0.0-Stable | Stable release after beta feedback |
 | v1.1 | Expanded cover matching, metadata and premium library |
@@ -190,13 +195,13 @@ Touchscreen Settings and in-game menu support are deferred until after the first
 
 ## Credits
 
-NS2SNES-9X development by **blueshockz47**. Original [SW2SNES](https://github.com/Rodpad/SW2SNES) by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew, libounce and the kaiHEN community.
+NS2xSNES9x development by **blueshockz47**. Original [SW2SNES](https://github.com/Rodpad/SW2SNES) by Rodpad; Snes9x and its contributors; devkitPro, ouncebrew, libounce and the kaiHEN community.
 
 ## Licence
 
-The original SW2SNES code and NS2SNES-9X modifications (everything outside `third_party/`) is under the MIT licence
+The original SW2SNES code and NS2xSNES9x modifications (everything outside `third_party/`) is under the MIT licence
 (see `LICENSE`). **Snes9x is not free software for commercial use**: its licence
-allows free non-commercial use and distribution only, so NS2SNES-9X as a whole may
+allows free non-commercial use and distribution only, so NS2xSNES9x as a whole may
 only be used and distributed non-commercially. See `licenses/snes9x-LICENSE.txt`.
 
 It also includes:
